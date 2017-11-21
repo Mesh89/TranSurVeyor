@@ -2,6 +2,8 @@
 // Created by Wan-Ping Lee
 // Last revision by Mengyao Zhao on 2017-05-30
 
+// Modified to make N mat
+
 #include "ssw_cpp.h"
 #include "ssw.h"
 
@@ -26,7 +28,7 @@ static const int8_t kBaseTranslation[128] = {
 
 void BuildSwScoreMatrix(const uint8_t& match_score,
                         const uint8_t& mismatch_penalty,
-			int8_t* matrix) {
+			int8_t* matrix, bool Nasmatch) {
 
   // The score matrix looks like
   //                 // A,  C,  G,  T,  N
@@ -36,18 +38,20 @@ void BuildSwScoreMatrix(const uint8_t& match_score,
   //                   -2, -2, -2,  2, -2, // T
   //                   -2, -2, -2, -2, -2};// N
 
+  // modified to make N match everything else
+
   int id = 0;
   for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < 4; ++j) {
       matrix[id] = ((i == j) ? match_score : static_cast<int8_t>(-mismatch_penalty));
       ++id;
     }
-    matrix[id] = static_cast<int8_t>(-mismatch_penalty); // For N
+    matrix[id] = static_cast<int8_t>(Nasmatch ? match_score : -mismatch_penalty); // For N
     ++id;
   }
 
   for (int i = 0; i < 5; ++i)
-    matrix[id++] = static_cast<int8_t>(-mismatch_penalty); // For N
+    matrix[id++] = static_cast<int8_t>(Nasmatch ? match_score : -mismatch_penalty); // For N
 
 }
 
@@ -238,14 +242,15 @@ Aligner::Aligner(void)
     , translated_reference_(NULL)
     , reference_length_(0)
 {
-  BuildDefaultMatrix();
+  BuildDefaultMatrix(false);
 }
 
 Aligner::Aligner(
     const uint8_t& match_score,
     const uint8_t& mismatch_penalty,
     const uint8_t& gap_opening_penalty,
-    const uint8_t& gap_extending_penalty)
+    const uint8_t& gap_extending_penalty,
+    bool Nasmatch)
 
     : score_matrix_(NULL)
     , score_matrix_size_(5)
@@ -257,7 +262,7 @@ Aligner::Aligner(
     , translated_reference_(NULL)
     , reference_length_(0)
 {
-  BuildDefaultMatrix();
+  BuildDefaultMatrix(Nasmatch);
 }
 
 Aligner::Aligner(const int8_t* score_matrix,
@@ -420,7 +425,7 @@ bool Aligner::ReBuild(void) {
   if (translation_matrix_) return false;
 
   SetAllDefault();
-  BuildDefaultMatrix();
+  BuildDefaultMatrix(false);
 
   return true;
 }
@@ -429,7 +434,8 @@ bool Aligner::ReBuild(
     const uint8_t& match_score,
     const uint8_t& mismatch_penalty,
     const uint8_t& gap_opening_penalty,
-    const uint8_t& gap_extending_penalty) {
+    const uint8_t& gap_extending_penalty,
+    bool Nasmatch) {
   if (translation_matrix_) return false;
 
   SetAllDefault();
@@ -439,7 +445,7 @@ bool Aligner::ReBuild(
   gap_opening_penalty_   = gap_opening_penalty;
   gap_extending_penalty_ = gap_extending_penalty;
 
-  BuildDefaultMatrix();
+  BuildDefaultMatrix(Nasmatch);
 
   return true;
 }
@@ -459,10 +465,10 @@ bool Aligner::ReBuild(
   return true;
 }
 
-void Aligner::BuildDefaultMatrix(void) {
+void Aligner::BuildDefaultMatrix(bool Nasmatch) {
   ClearMatrices();
   score_matrix_ = new int8_t[score_matrix_size_ * score_matrix_size_];
-  BuildSwScoreMatrix(match_score_, mismatch_penalty_, score_matrix_);
+  BuildSwScoreMatrix(match_score_, mismatch_penalty_, score_matrix_, Nasmatch);
   translation_matrix_ = new int8_t[SizeOfArray(kBaseTranslation)];
   memcpy(translation_matrix_, kBaseTranslation, sizeof(int8_t) * SizeOfArray(kBaseTranslation));
 }

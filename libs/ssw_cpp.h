@@ -89,7 +89,8 @@ class Aligner {
   Aligner(const uint8_t& match_score,
           const uint8_t& mismatch_penalty,
 	  const uint8_t& gap_opening_penalty,
-	  const uint8_t& gap_extending_penalty);
+	  const uint8_t& gap_extending_penalty,
+      bool Nasmatch);
 
   // =========
   // @function Construct an Aligner by the specific matrixs.
@@ -176,7 +177,8 @@ class Aligner {
           const uint8_t& match_score,
           const uint8_t& mismatch_penalty,
 	  const uint8_t& gap_opening_penalty,
-	  const uint8_t& gap_extending_penalty);
+	  const uint8_t& gap_extending_penalty,
+      bool Nasmatch);
 
   // =========
   // @function Construct an Aligner by the specific matrixs.
@@ -204,7 +206,7 @@ class Aligner {
 
   int TranslateBase(const char* bases, const int& length, int8_t* translated) const;
   void SetAllDefault(void);
-  void BuildDefaultMatrix(void);
+  void BuildDefaultMatrix(bool);
   void ClearMatrices(void);
 
   Aligner& operator= (const Aligner&);
