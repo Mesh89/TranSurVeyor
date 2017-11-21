@@ -185,7 +185,7 @@ void build_clip_consensuses(int id, int contig_id) {
     std::cout << "Building consensus for " << contig_id << "-CLIP.bam (" << contig_id2name[contig_id] << ")" << std::endl;
     mtx.unlock();
 
-    StripedSmithWaterman::Aligner aligner(2,2,4,1);
+    StripedSmithWaterman::Aligner aligner(2,2,4,1,true);
     StripedSmithWaterman::Filter filter;
 
     std::vector<consensus_t*>& clip_consensuses = consensus_vectors[contig_id-1];

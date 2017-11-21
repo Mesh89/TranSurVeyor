@@ -91,7 +91,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        if (support(pred) >= config.avg_depth/6 && ptn_score(pred) > ptn_ratio) {
+        if (support(pred) >= config.avg_depth/5 && ptn_score(pred) > ptn_ratio) {
             retained.push_back(pred);
         }
     }
