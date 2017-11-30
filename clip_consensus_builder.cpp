@@ -48,11 +48,6 @@ std::vector<std::vector<consensus_t*> > consensus_vectors;
 auto clip_start = [](bam1_t* r, bool left_clipped) {return left_clipped ? get_unclipped_start(r) : bam_endpos(r);};
 auto clip_end = [](bam1_t* r, bool left_clipped) {return left_clipped ? r->core.pos : get_unclipped_end(r);};
 
-void write_clip(consensus_t* consensus) {
-    mtx.lock();
-    fa_out << ">" << consensus->name() << "\n" << consensus->consensus << "\n";
-    mtx.unlock();
-}
 
 std::string build_clip_consensus2(std::vector<bam1_t*>& clipped, bool left_clipped) {
     sort(clipped.begin(), clipped.end(), [&left_clipped](bam1_t* r1, bam1_t* r2) {
@@ -167,16 +162,24 @@ consensus_t* build_clip_consensus(int contig_id, std::vector<bam1_t*>& clipped,
         }
     }
 
-    if (accepted_clips.empty()) {
+    clipped.swap(accepted_clips);
+    if (clipped.size() <= 1) {
+        clipped.clear();
         return NULL;
     } else {
         int start = INT32_MAX, end = 0;
-        for (bam1_t* r : accepted_clips) {
+        for (bam1_t* r : clipped) {
             start = std::min(start, r->core.pos);
             end = std::max(end, bam_endpos(r));
         }
         consensus = build_clip_consensus2(clipped, left_clipped);
-        return new consensus_t(left_clipped, contig_id, start, end, consensus, accepted_clips.size());
+        return new consensus_t(left_clipped, contig_id, start, end, consensus, clipped.size());
+    }
+}
+
+void write_clips_ids(std::ofstream& out, std::vector<bam1_t*>& clips) {
+    for (bam1_t* clip : clips) {
+        out << bam_get_qname(clip) << "\n";
     }
 }
 
@@ -189,6 +192,9 @@ void build_clip_consensuses(int id, int contig_id) {
     StripedSmithWaterman::Filter filter;
 
     std::vector<consensus_t*>& clip_consensuses = consensus_vectors[contig_id-1];
+
+    std::string clipped_ids_fname = workdir + "/workspace/" + std::to_string(contig_id)+"-CLIPPED";
+    std::ofstream clipped_ids_file(clipped_ids_fname);
 
     std::string bam_fname = workdir + "/workspace/" + std::to_string(contig_id)+"-CLIP.bam";
     samFile* bam_file = sam_open(bam_fname.c_str(), "r");
@@ -236,6 +242,7 @@ void build_clip_consensuses(int id, int contig_id) {
             if (!curr_candidate_cluster.empty() &&
                 !lc_same_cluster(curr_candidate_cluster[0], lc_read)) { // candidate cluster complete
                 consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, true, aligner, filter);
+                write_clips_ids(clipped_ids_file, curr_candidate_cluster);
                 curr_candidate_cluster.clear();
 
                 if (consensus != NULL) {
@@ -246,6 +253,7 @@ void build_clip_consensuses(int id, int contig_id) {
         }
         // process last cluster
         consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, true, aligner, filter);
+        write_clips_ids(clipped_ids_file, curr_candidate_cluster);
         curr_candidate_cluster.clear();
         if (consensus != NULL) {
             clip_consensuses.push_back(consensus);
@@ -258,6 +266,7 @@ void build_clip_consensuses(int id, int contig_id) {
             if (!curr_candidate_cluster.empty() &&
                 !rc_same_cluster(curr_candidate_cluster[0], rc_read)) { // candidate cluster complete
                 consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, false, aligner, filter);
+                write_clips_ids(clipped_ids_file, curr_candidate_cluster);
                 curr_candidate_cluster.clear();
 
                 if (consensus != NULL) {
@@ -268,6 +277,7 @@ void build_clip_consensuses(int id, int contig_id) {
         }
         // process last cluster
         consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, false, aligner, filter);
+        write_clips_ids(clipped_ids_file, curr_candidate_cluster);
         curr_candidate_cluster.clear();
         if (consensus != NULL) {
             clip_consensuses.push_back(consensus);
@@ -282,6 +292,8 @@ void build_clip_consensuses(int id, int contig_id) {
     // sort by clipping position
     sort(clip_consensuses.begin(), clip_consensuses.end(), [](consensus_t* c1, consensus_t* c2) {
         return c1->clipped_pos() < c2->clipped_pos();});
+
+    clipped_ids_file.close();
 }
 
 int main(int argc, char* argv[]) {

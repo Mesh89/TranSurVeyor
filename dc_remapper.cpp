@@ -1,6 +1,8 @@
 #include <iostream>
 #include <unordered_map>
+#include <unordered_set>
 #include <map>
+#include <set>
 #include <unistd.h>
 #include <htslib/sam.h>
 #include <htslib/kseq.h>
@@ -26,7 +28,7 @@ std::unordered_map<std::string, std::pair<char*, size_t> > chrs;
 
 const int SMALL_SAMPLE_SIZE = 15;
 const int CLUSTER_CANDIDATES = 3;
-const double BASE_ACCEPTANCE_THRESHOLD = 0.85;
+const double BASE_ACCEPTANCE_THRESHOLD = 0.95;
 
 const int SKIP_READ = -1;
 
@@ -39,6 +41,19 @@ struct region_t {
     region_t(int contig_id, int original_bam_id, int start, int end)
             : contig_id(contig_id), original_bam_id(original_bam_id), start(start), end(end) {}
 };
+
+struct cc_v_distance_t {
+    std::vector<bam1_t*>* c1,* c2;
+    int distance;
+
+    cc_v_distance_t(std::vector<bam1_t*>* c1, std::vector<bam1_t*>* c2, int distance) : c1(c1), c2(c2), distance(distance) {}
+};
+bool operator < (const cc_v_distance_t& ccd1, const cc_v_distance_t& ccd2) { // reverse op for priority queue
+    return ccd1.distance < ccd2.distance;
+}
+
+void remap_supp(int contig_id, std::unordered_map<std::string, std::string> &mateseqs, std::string &qname,
+                const std::string &l_dc_fname);
 
 std::string print_region(region_t region) {
     std::stringstream ss;
@@ -142,21 +157,20 @@ samFile* open_writer(std::string name, bam_hdr_t* header) {
     return remapped_file;
 }
 
-void remap_cluster(std::vector<bam1_t*>& cluster, int contig_id, bam_hdr_t* header, bool rev,
+void remap_cluster(std::vector<bam1_t*>& cluster, std::vector<bam1_t*>& kept, int contig_id, bam_hdr_t* header,
                    std::unordered_map<std::string, std::string>& mateseqs,
-                   StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& aligner_to_base,
-                   samFile* dc_remapped_file) {
-    if (cluster.size() == 1) return;
+                   StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& aligner_to_base) {
+    std::vector<region_t> regions;
 
-    sort(cluster.begin(), cluster.end(), [] (bam1_t* r1, bam1_t* r2) {
+    std::vector<bam1_t*> full_cluster;
+    full_cluster.insert(full_cluster.end(), cluster.begin(), cluster.end());
+    sort(full_cluster.begin(), full_cluster.end(), [] (bam1_t* r1, bam1_t* r2) {
         if (r1->core.mtid != r2->core.mtid) return r1->core.mtid < r2->core.mtid;
         else return r1->core.mpos < r2->core.mpos;
     });
 
-    std::vector<region_t> regions;
-
     std::vector<bam1_t*> subcluster;
-    for (bam1_t* r : cluster) {
+    for (bam1_t* r : full_cluster) {
         if (!subcluster.empty() && (subcluster[0]->core.mtid != r->core.mtid ||
                 r->core.mpos-subcluster[0]->core.mpos > config.max_is)) {
             std::string m_contig_name = std::string(header->target_name[subcluster[0]->core.mtid]);
@@ -170,13 +184,10 @@ void remap_cluster(std::vector<bam1_t*>& cluster, int contig_id, bam_hdr_t* head
         regions.push_back(get_region(subcluster, m_contig_name));
     }
 
-    if (regions.empty()) return;
-
     StripedSmithWaterman::Filter filter, filter_w_cigar;
     filter_w_cigar.report_cigar = true;
     bool is_rc;
 
-    // TODO: make N match
     if (cluster.size() > SMALL_SAMPLE_SIZE && regions.size() > CLUSTER_CANDIDATES) {
         std::vector<bam1_t*> small_sample(cluster);
         std::random_shuffle(small_sample.begin(), small_sample.end());
@@ -210,16 +221,16 @@ void remap_cluster(std::vector<bam1_t*>& cluster, int contig_id, bam_hdr_t* head
     compute_score(base_region, cluster, mateseqs, NULL, NULL, aligner_to_base, filter, is_rc);
 
     if (base_region.score >= best_region.score*BASE_ACCEPTANCE_THRESHOLD) {
-        cluster.clear();
+//        std::cout << "Bringing home " << cluster[0]->core.pos << std::endl;
+//        cluster.clear();
         return;
     }
 
-    std::vector<bam1_t*> kept;
     std::vector<int> offsets;
     std::vector<std::string> cigars;
     compute_score(best_region, cluster, mateseqs, &offsets, &cigars, aligner, filter_w_cigar, is_rc);
     for (int i = 0; i < cluster.size(); i++) {
-        if (offsets[i] == SKIP_READ) continue;
+        if (offsets[i] == SKIP_READ) continue; // TODO: mem leak
 
         bam1_t* r = cluster[i];
         r->core.mtid = best_region.original_bam_id;
@@ -232,13 +243,13 @@ void remap_cluster(std::vector<bam1_t*>& cluster, int contig_id, bam_hdr_t* head
             assert(!bam_is_mrev(r));
         }
 
-        std::string dir = rev ? "L" : "R";
         bam_aux_update_str(r, "MC", cigars[i].length()+1, cigars[i].c_str());
 
         kept.push_back(r);
     }
 
-    cluster.swap(kept);
+//    cluster.swap(kept);
+    sort(kept.begin(), kept.end(), [] (bam1_t* r1, bam1_t* r2) {return get_endpoint(r1) < get_endpoint(r2);});
 }
 
 int find(int* parents, int i) {
@@ -281,73 +292,39 @@ void remove_cluster_from_mm(std::multimap<int, cluster_t*>& mm, cluster_t* c) {
     remove_cluster_from_mm(mm, c, c->a1.end);
 }
 
-void remap(int id, int contig_id, bool rev) {
-    mtx.lock();
-    std::cout << "Remapping DC for " << contig_id << " (" << contig_id2name[contig_id] << ")" << std::endl;
-    mtx.unlock();
-
-    std::unordered_map<std::string, std::string> mateseqs;
-    std::ifstream mateseqs_fin(workdir + "/workspace/" + std::to_string(contig_id) + "-MATESEQS");
-    std::string qname, seq;
-    while (mateseqs_fin >> qname >> seq) {
-        mateseqs[qname] = seq;
-    }
-    mateseqs_fin.close();
-
-    std::string dir = rev ? "L" : "R";
-    std::string dc_fname = workdir + "/workspace/" + dir + std::to_string(contig_id) + "-DC.noremap.bam";
-    samFile* dc_file = sam_open(dc_fname.c_str(), "r");
-    if (dc_file == NULL) {
-        throw "Unable to open " + dc_fname;
-    }
-
-    int code = sam_index_build(dc_fname.c_str(), 0);
-    if (code != 0) {
-        throw "Cannot index " + dc_fname;
-    }
-
-    hts_idx_t* idx = sam_index_load(dc_file, dc_fname.c_str());
-    if (idx == NULL) {
-        throw "Unable to open index for " + dc_fname;
-    }
-
-    bam_hdr_t* header = sam_hdr_read(dc_file);
-    if (header == NULL) {
-        throw "Unable to open header for " + dc_fname;
-    }
-
-    std::string dc_remapped_fname = workdir + "/workspace/" + dir + std::to_string(contig_id) + "-DC.remap.bam";
-    samFile* dc_remapped_file = open_writer(dc_remapped_fname, header);
-    if (dc_remapped_file == NULL) {
-        throw "Unable to open " + dc_remapped_fname;
-    }
-
-    StripedSmithWaterman::Aligner aligner(2,2,3,1,false);
-    StripedSmithWaterman::Aligner aligner_to_base(2,2,3,1,true);
+std::vector<std::vector<bam1_t*> > cluster_reads(open_samFile_t* dc_file, int contig_id,
+                                                 std::unordered_map<std::string, std::string> &mateseqs,
+                                                 std::vector<cluster_t*>& clip_clusters) {
 
     std::string contig = contig_id2name[contig_id];
-    hts_itr_t* iter = sam_itr_querys(idx, header, contig.c_str());
+    hts_itr_t* iter = sam_itr_querys(dc_file->idx, dc_file->header, contig.c_str());
     bam1_t* read = bam_init1();
 
     std::vector<cluster_t*> clusters;
     std::multimap<int, cluster_t*> clusters_map;
     std::vector<bam1_t*> reads;
-    while (sam_itr_next(dc_file, iter, read) >= 0) {
-        qname = bam_get_qname(read);
+    while (sam_itr_next(dc_file->file, iter, read) >= 0) {
+        std::string qname = bam_get_qname(read);
         if (mateseqs.count(qname) == 0 && mateseqs.count(qname + "_1") == 0 &&
             mateseqs.count(qname + "_2") == 0) continue; // mateseq not present
 
         std::string mate_read = mateseqs[qname];
         if (is_poly_ACGT(read) || is_poly_ACGT(mate_read.c_str(), mate_read.length())) continue;
 
-        int pos = rev ? read->core.pos : bam_endpos(read);
-        anchor_t a(rev ? 'L' : 'R', contig_id, pos, pos, rev ? is_left_clipped(read): is_right_clipped(read));
+        bool rev = bam_is_rev(read);
+        anchor_t a(rev ? 'L' : 'R', contig_id, read->core.pos, bam_endpos(read), 0);
         cluster_t* c = new cluster_t(a, a, DISC_TYPES.DC, 1);
         c->id = clusters.size();
         clusters.push_back(c);
         clusters_map.insert(std::make_pair(c->a1.start, c));
         clusters_map.insert(std::make_pair(c->a1.end, c));
         reads.push_back(bam_dup1(read));
+    }
+    for (cluster_t* c : clip_clusters) {
+        c->id = -1;
+        clusters.push_back(c);
+        clusters_map.insert(std::make_pair(c->a1.start, c));
+        clusters_map.insert(std::make_pair(c->a1.end, c));
     }
 
     sam_itr_destroy(iter);
@@ -388,10 +365,11 @@ void remap(int id, int contig_id, bool rev) {
             if (ccd.c1->dead || ccd.c2->dead) continue;
 
             cluster_t* new_cluster = cluster_t::merge(ccd.c1, ccd.c2);
-            new_cluster->id = ccd.c1->id;
-            merge(parents, sizes, ccd.c1->id, ccd.c2->id);
+            new_cluster->id = std::max(ccd.c1->id, ccd.c2->id); // clip clusters have id -1
+            if (std::min(ccd.c1->id, ccd.c2->id) >= 0) {
+                merge(parents, sizes, ccd.c1->id, ccd.c2->id);
+            }
             clusters.push_back(new_cluster);
-
 
             ccd.c1->dead = true;
             remove_cluster_from_mm(clusters_map, ccd.c1);
@@ -420,49 +398,155 @@ void remap(int id, int contig_id, bool rev) {
         read_clusters[find(parents, i)].push_back(reads[i]);
     }
 
-    // remap clusters
-    std::vector<bam1_t*> kept_reads;
-    for (int i = 0; i < read_clusters.size(); i++) {
-        if (read_clusters[i].size() > 1) {
-            int mq = 0;
-            for (bam1_t* read : read_clusters[i]) { // check average MQ
-                mq += read->core.qual;
-            }
-            remap_cluster(read_clusters[i], contig_id, header, rev, mateseqs, aligner, aligner_to_base, dc_remapped_file);
-            for (bam1_t* read : read_clusters[i]) {
-                kept_reads.push_back(read);
-            }
-        }
+    // remove clusters of size < 2 (with no mem leaks)
+    for (std::vector<bam1_t*>& v : read_clusters) {
+        if (v.size() == 1) bam_destroy1(v[0]);
     }
-
-    // write reads
-    sort(kept_reads.begin(), kept_reads.end(), [](bam1_t *r1, bam1_t *r2) { return r1->core.pos < r2->core.pos; });
-    for (bam1_t* r : kept_reads) {
-        int ok = sam_write1(dc_remapped_file, header, r);
-        if (ok < 0) throw "Unable to write to " + std::string(dc_remapped_file->fn);
-    }
+    read_clusters.erase(std::remove_if(read_clusters.begin(), read_clusters.end(),
+                                       [](std::vector<bam1_t*> v) {return v.size() <= 1;}), read_clusters.end());
 
     for (cluster_t* c : clusters) delete c;
 
-    delete[] parents; delete[] sizes;
-    hts_idx_destroy(idx);
-    bam_hdr_destroy(header);
-    sam_close(dc_remapped_file);
+    delete[] parents;
+    delete[] sizes;
+
+    return read_clusters;
+}
+
+void write_and_index_file(std::vector<bam1_t*>& reads, std::string fname, bam_hdr_t* header) {
+    samFile* file = open_writer(fname, header);
+    if (file == NULL) {
+        throw "Unable to open " + fname;
+    }
+
+    // write reads
+    sort(reads.begin(), reads.end(), [](bam1_t *r1, bam1_t *r2) { return r1->core.pos < r2->core.pos; });
+    for (bam1_t* r : reads) {
+        int ok = sam_write1(file, header, r);
+        if (ok < 0) throw "Unable to write to " + fname;
+    }
+
+    sam_close(file);
+
+    file = sam_open(fname.c_str(), "r");
+
+    int code = sam_index_build(fname.c_str(), 0);
+    if (code != 0) {
+        throw "Cannot index " + fname;
+    }
+
+    sam_close(file);
+}
+
+void remap(int id, int contig_id, std::vector<cluster_t*>& r_clip_cluster, std::vector<cluster_t*>& l_clip_cluster) {
+    mtx.lock();
+    std::cout << "Remapping DC for " << contig_id << " (" << contig_id2name[contig_id] << ")" << std::endl;
+    mtx.unlock();
+
+    StripedSmithWaterman::Aligner aligner(2, 2, 3, 1, false);
+    StripedSmithWaterman::Aligner aligner_to_base(2, 2, 3, 1, true);
+
+    std::unordered_map<std::string, std::string> mateseqs;
+    std::ifstream mateseqs_fin(workdir + "/workspace/" + std::to_string(contig_id) + "-MATESEQS");
+    std::string qname, seq;
+    while (mateseqs_fin >> qname >> seq) {
+        mateseqs[qname] = seq;
+    }
+    mateseqs_fin.close();
+
+    std::string l_dc_fname = workdir + "/workspace/L" + std::to_string(contig_id) + "-DC.noremap.bam";
+    std::string r_dc_fname = workdir + "/workspace/R" + std::to_string(contig_id) + "-DC.noremap.bam";
+    open_samFile_t* l_dc_file = open_samFile(l_dc_fname.c_str(), true);
+    open_samFile_t* r_dc_file = open_samFile(r_dc_fname.c_str(), true);
+    std::vector<std::vector<bam1_t*> > l_clusters = cluster_reads(l_dc_file, contig_id, mateseqs, l_clip_cluster);
+    std::vector<std::vector<bam1_t*> > r_clusters = cluster_reads(r_dc_file, contig_id, mateseqs, r_clip_cluster);
+
+    std::vector<bam1_t*> l_reads_to_write, r_reads_to_write;
+
+//    for (std::vector<bam1_t*>& l_cluster : l_clusters) {
+//        int pos1 = l_cluster[0]->core.pos;
+//        int pos2 = bam_endpos(l_cluster[l_cluster.size()-1]);
+//        std::cout << "L " << pos1 << "-" << pos2 << "  " << l_cluster.size() << std::endl;
+//    }
+//    for (std::vector<bam1_t*>& r_cluster : r_clusters) {
+//        int pos1 = bam_endpos(r_cluster[r_cluster.size()-1]);
+//        int pos2 = r_cluster[0]->core.pos;
+//        std::cout << "R " << pos1 << "-" << pos2 << "  " << r_cluster.size() << std::endl;
+//    }
+//    return;
+
+    std::priority_queue<cc_v_distance_t> pq;
+    auto score_f = [](const std::vector<bam1_t*>& v1, const std::vector<bam1_t*>& v2) {return v1.size()*v2.size();};
+
+    std::set<int> r_clusters_available, l_clusters_available;
+    std::multimap<int, std::vector<bam1_t*>* > l_clusters_map;
+    for (std::vector<bam1_t*>& l_cluster : l_clusters) {
+        int pos = l_cluster[0]->core.pos;
+        l_clusters_map.insert(std::make_pair(pos, &l_cluster));
+        l_clusters_available.insert(pos);
+    }
+    for (std::vector<bam1_t*>& r_cluster : r_clusters) {
+        int pos = bam_endpos(r_cluster[r_cluster.size()-1]);
+        auto begin = l_clusters_map.lower_bound(pos-50);
+        auto end = l_clusters_map.upper_bound(pos+config.max_is);
+
+        std::vector<bam1_t*>* l_cluster = NULL;
+        for (auto it = begin; it != end; it++) {
+            if (l_cluster == NULL || it->second->size() > l_cluster->size()) {
+                l_cluster = it->second;
+            }
+        }
+        if (l_cluster == NULL) continue;
+
+        r_clusters_available.insert(pos);
+
+        pq.push(cc_v_distance_t(&r_cluster, l_cluster, score_f(r_cluster, *l_cluster)));
+    }
+
+    while (!pq.empty()) {
+        cc_v_distance_t cc_v_distance = pq.top();
+        pq.pop();
+
+        std::vector<bam1_t*>& c1 = *(cc_v_distance.c1);
+        std::vector<bam1_t*>& c2 = *(cc_v_distance.c2);
+        int r_pos = bam_endpos(*c1.rbegin());
+        int l_pos = c2[0]->core.pos;
+
+        auto r_it = r_clusters_available.find(r_pos);
+        auto l_it = l_clusters_available.find(l_pos);
+        if (r_it == r_clusters_available.end() || l_it == l_clusters_available.end()) continue;
+
+        r_clusters_available.erase(r_it);
+        l_clusters_available.erase(l_it);
+
+        std::vector<bam1_t*> to_write;
+
+        // remap clusters
+        remap_cluster(c1, to_write, contig_id, r_dc_file->header, mateseqs, aligner, aligner_to_base);
+        if (!to_write.empty()) r_reads_to_write.insert(r_reads_to_write.end(), to_write.begin(), to_write.end());
+
+        to_write.clear();
+        remap_cluster(c2, to_write, contig_id, l_dc_file->header, mateseqs, aligner, aligner_to_base);
+        if (!to_write.empty()) l_reads_to_write.insert(l_reads_to_write.end(), to_write.begin(), to_write.end());
+
+    }
+
+    std::string l_dc_remapped_fname = workdir + "/workspace/L" + std::to_string(contig_id) + "-DC.remap.bam";
+    write_and_index_file(l_reads_to_write, l_dc_remapped_fname, l_dc_file->header);
+
+    std::string r_dc_remapped_fname = workdir + "/workspace/R" + std::to_string(contig_id) + "-DC.remap.bam";
+    write_and_index_file(r_reads_to_write, r_dc_remapped_fname, r_dc_file->header);
+
+    close_samFile(l_dc_file);
+    close_samFile(r_dc_file);
 
     // destroy reads
-    for (bam1_t* r : reads) {
+    for (bam1_t* r : l_reads_to_write) {
         bam_destroy1(r);
     }
-
-    dc_remapped_file = sam_open(dc_remapped_fname.c_str(), "r");
-
-    code = sam_index_build(dc_remapped_file->fn, 0);
-    if (code != 0) {
-        throw "Cannot index " + std::string(dc_remapped_file->fn);
+    for (bam1_t* r : r_reads_to_write) {
+        bam_destroy1(r);
     }
-
-    sam_close(dc_remapped_file);
-    sam_close(dc_file);
 }
 
 int main(int argc, char* argv[]) {
@@ -491,13 +575,27 @@ int main(int argc, char* argv[]) {
         contig_name2id[contig_name] = contig_id;
     }
 
+    std::string clip_name, clip_seq;
+    std::ifstream clips_fin(workspace + "/CLIPS.fa");
+    std::unordered_map<int, std::vector<cluster_t*> > r_clip_clusters, l_clip_clusters;
+    while (getline(clips_fin, clip_name)) {
+        getline(clips_fin, clip_seq);
+        int anchor_contig_id, anchor_start, anchor_end; char anchor_dir; int anchor_sc_reads;
+        sscanf(clip_name.c_str()+1, "%d_%d_%d_%c_%d", &anchor_contig_id, &anchor_start, &anchor_end, &anchor_dir, &anchor_sc_reads);
+        anchor_t a(anchor_dir, anchor_contig_id, anchor_start, anchor_end, anchor_sc_reads);
+        cluster_t* c = new cluster_t(a, a, DISC_TYPES.DC, 0);
+        if (anchor_dir == 'L') {
+            l_clip_clusters[anchor_contig_id].push_back(c);
+        } else {
+            r_clip_clusters[anchor_contig_id].push_back(c);
+        }
+    }
+
     ctpl::thread_pool thread_pool(config.threads);
 
     std::vector<std::future<void> > futures;
     for (contig_id = 1; contig_id < contig_id2name.size(); contig_id++) {
-        std::future<void> future = thread_pool.push(remap, contig_id, true);
-        futures.push_back(std::move(future));
-        future = thread_pool.push(remap, contig_id, false);
+        std::future<void> future = thread_pool.push(remap, contig_id, r_clip_clusters[contig_id], l_clip_clusters[contig_id]);
         futures.push_back(std::move(future));
     }
     thread_pool.stop(true);

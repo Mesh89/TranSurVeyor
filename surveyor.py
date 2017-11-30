@@ -20,7 +20,7 @@ cmd_parser.add_argument('--maxSCDist', type=int, default=10, help='Max SC distan
 cmd_args = cmd_parser.parse_args()
 
 
-Create config file in workdir
+# Create config file in workdir
 
 config_file = open(cmd_args.workdir + "/config.txt", "w")
 config_file.write("threads %d\n" % cmd_args.threads)
@@ -94,7 +94,7 @@ mean_is = int(np.mean(general_dist))
 lower_stddev_is = int(np.sqrt(np.mean([(mean_is-x)**2 for x in general_dist if x < mean_is])))
 higher_stddev_is = int(np.sqrt(np.mean([(x-mean_is)**2 for x in general_dist if x > mean_is])))
 
-min_is, max_is = mean_is-3*lower_stddev_is, mean_is+3*higher_stddev_is
+min_is, max_is = mean_is-3*lower_stddev_is, mean_is+3.5*higher_stddev_is
 print mean_is, min_is, max_is
 
 config_file.write("min_is %d\n" % min_is)

@@ -105,8 +105,6 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
         bam1_t* read = forward_buffer.front();
         forward_buffer.pop_front();
 
-
-
         bam_aux_get(read, "MQ");
         int64_t mq = get_mq(read);
         if (read->core.qual < MIN_MAPQ && mq < MIN_MAPQ) continue;
@@ -116,7 +114,6 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
             int ok = sam_write1(clip_writer, header, read);
             if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
         }
-
 
         // we accept one of the mates having mapq 0 only if they are on different chromosomes
         if ((read->core.qual < MIN_MAPQ || mq < MIN_MAPQ)
@@ -135,9 +132,11 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
 
         if (is_dc_pair(read)) {
             if (read->core.qual >= MIN_DC_MAPQ || mq >= MIN_DC_MAPQ) {
-                if (read->core.qual >= mq && check_SNP(read, two_way_buffer, config.avg_depth)) { // first in pair
-                    int ok = sam_write1(bam_is_rev(read) ? ldc_writer : rdc_writer, header, read);
-                    if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
+                if (read->core.qual >= mq && check_SNP(read, two_way_buffer, config.avg_depth)) { // stable end
+                    if (bam_is_rev(read) && !is_right_clipped(read) || !bam_is_rev(read) && !is_left_clipped(read)) {
+                        int ok = sam_write1(bam_is_rev(read) ? ldc_writer : rdc_writer, header, read);
+                        if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
+                    }
                 }
                 if (read->core.qual <= mq) { // save read seq for remapping
                     const uint8_t* read_seq = bam_get_seq(read);
