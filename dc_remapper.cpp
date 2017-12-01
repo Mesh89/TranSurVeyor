@@ -77,6 +77,7 @@ char _cigar_int_to_op(uint32_t c) {
 int compute_score_supp(region_t& region, std::vector<bam1_t*>& reads, std::unordered_map<std::string, std::string>& mateseqs,
                    std::vector<int>* offsets, std::vector<std::string>* cigars,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Filter& filter, bool do_rc) {
+
     int score = 0;
     for (bam1_t* r : reads) {
         std::string qname = bam_get_qname(r);
@@ -89,7 +90,7 @@ int compute_score_supp(region_t& region, std::vector<bam1_t*>& reads, std::unord
         int mask_len = s.length()/2;
         if (mask_len < 15) mask_len = 15;
 
-        if (do_rc) {
+        if ((do_rc && !bam_is_rev(r)) || (!do_rc && bam_is_rev(r))) {
             rc(s);
         }
         aligner.Align(s.c_str(), chrs[contig_id2name[region.contig_id]].first+region.start, region.end-region.start,
@@ -157,13 +158,14 @@ samFile* open_writer(std::string name, bam_hdr_t* header) {
     return remapped_file;
 }
 
-void remap_cluster(std::vector<bam1_t*>& cluster, std::vector<bam1_t*>& kept, int contig_id, bam_hdr_t* header,
+void remap_cluster(std::vector<bam1_t*>& r_cluster, std::vector<bam1_t*>& l_cluster, std::vector<bam1_t*>& kept, int contig_id, bam_hdr_t* header,
                    std::unordered_map<std::string, std::string>& mateseqs,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& aligner_to_base) {
     std::vector<region_t> regions;
 
     std::vector<bam1_t*> full_cluster;
-    full_cluster.insert(full_cluster.end(), cluster.begin(), cluster.end());
+    full_cluster.insert(full_cluster.end(), l_cluster.begin(), l_cluster.end());
+    full_cluster.insert(full_cluster.end(), r_cluster.begin(), r_cluster.end());
     sort(full_cluster.begin(), full_cluster.end(), [] (bam1_t* r1, bam1_t* r2) {
         if (r1->core.mtid != r2->core.mtid) return r1->core.mtid < r2->core.mtid;
         else return r1->core.mpos < r2->core.mpos;
@@ -188,8 +190,8 @@ void remap_cluster(std::vector<bam1_t*>& cluster, std::vector<bam1_t*>& kept, in
     filter_w_cigar.report_cigar = true;
     bool is_rc;
 
-    if (cluster.size() > SMALL_SAMPLE_SIZE && regions.size() > CLUSTER_CANDIDATES) {
-        std::vector<bam1_t*> small_sample(cluster);
+    if (full_cluster.size() > SMALL_SAMPLE_SIZE && regions.size() > CLUSTER_CANDIDATES) {
+        std::vector<bam1_t*> small_sample(full_cluster);
         std::random_shuffle(small_sample.begin(), small_sample.end());
         if (small_sample.size() > SMALL_SAMPLE_SIZE) {
             small_sample.erase(small_sample.begin() + SMALL_SAMPLE_SIZE, small_sample.end());
@@ -206,19 +208,22 @@ void remap_cluster(std::vector<bam1_t*>& cluster, std::vector<bam1_t*>& kept, in
 
     // compute best score
     for (int i = 0; i < regions.size(); i++) {
-        compute_score(regions[i], cluster, mateseqs, NULL, NULL, aligner, filter, is_rc);
+        compute_score(regions[i], full_cluster, mateseqs, NULL, NULL, aligner, filter, is_rc);
     }
     sort(regions.begin(), regions.end(), [] (region_t r1, region_t r2) {return r1.score > r2.score;});
 
     region_t best_region = regions[0];
 
     // get base region
-    int start = cluster[0]->core.pos - config.max_is;
-    int end = bam_endpos(cluster[cluster.size()-1]) + config.max_is;
+    sort(full_cluster.begin(), full_cluster.end(), [] (bam1_t* r1, bam1_t* r2) {
+        return r1->core.pos < r2->core.pos;
+    });
+    int start = full_cluster[0]->core.pos - config.max_is;
+    int end = bam_endpos(full_cluster[full_cluster.size()-1]) + config.max_is;
     int contig_len = chrs[contig_id2name[contig_id]].second;
-    region_t base_region(contig_id, cluster[0]->core.tid, std::max(0,start), std::min(end,contig_len));
+    region_t base_region(contig_id, full_cluster[0]->core.tid, std::max(0,start), std::min(end,contig_len));
 
-    compute_score(base_region, cluster, mateseqs, NULL, NULL, aligner_to_base, filter, is_rc);
+    compute_score(base_region, full_cluster, mateseqs, NULL, NULL, aligner_to_base, filter, is_rc);
 
     if (base_region.score >= best_region.score*BASE_ACCEPTANCE_THRESHOLD) {
 //        std::cout << "Bringing home " << cluster[0]->core.pos << std::endl;
@@ -228,11 +233,11 @@ void remap_cluster(std::vector<bam1_t*>& cluster, std::vector<bam1_t*>& kept, in
 
     std::vector<int> offsets;
     std::vector<std::string> cigars;
-    compute_score(best_region, cluster, mateseqs, &offsets, &cigars, aligner, filter_w_cigar, is_rc);
-    for (int i = 0; i < cluster.size(); i++) {
+    compute_score(best_region, full_cluster, mateseqs, &offsets, &cigars, aligner, filter_w_cigar, is_rc);
+    for (int i = 0; i < full_cluster.size(); i++) {
         if (offsets[i] == SKIP_READ) continue; // TODO: mem leak
 
-        bam1_t* r = cluster[i];
+        bam1_t* r = full_cluster[i];
         r->core.mtid = best_region.original_bam_id;
         r->core.mpos = best_region.start + offsets[i];
         if (is_rc) {
@@ -293,7 +298,7 @@ void remove_cluster_from_mm(std::multimap<int, cluster_t*>& mm, cluster_t* c) {
 }
 
 std::vector<std::vector<bam1_t*> > cluster_reads(open_samFile_t* dc_file, int contig_id,
-                                                 std::unordered_map<std::string, std::string> &mateseqs,
+                                                 std::unordered_map<std::string, std::string>& mateseqs,
                                                  std::vector<cluster_t*>& clip_clusters) {
 
     std::string contig = contig_id2name[contig_id];
@@ -519,15 +524,21 @@ void remap(int id, int contig_id, std::vector<cluster_t*>& r_clip_cluster, std::
         r_clusters_available.erase(r_it);
         l_clusters_available.erase(l_it);
 
-        std::vector<bam1_t*> to_write;
-
         // remap clusters
-        remap_cluster(c1, to_write, contig_id, r_dc_file->header, mateseqs, aligner, aligner_to_base);
-        if (!to_write.empty()) r_reads_to_write.insert(r_reads_to_write.end(), to_write.begin(), to_write.end());
+        std::vector<bam1_t*> to_write;
+        remap_cluster(c1, c2, to_write, contig_id, r_dc_file->header, mateseqs, aligner, aligner_to_base);
 
-        to_write.clear();
-        remap_cluster(c2, to_write, contig_id, l_dc_file->header, mateseqs, aligner, aligner_to_base);
-        if (!to_write.empty()) l_reads_to_write.insert(l_reads_to_write.end(), to_write.begin(), to_write.end());
+        for (bam1_t* r : to_write) {
+            if (bam_is_rev(r)) {
+                l_reads_to_write.push_back(r);
+            } else {
+                r_reads_to_write.push_back(r);
+            }
+        }
+
+//        to_write.clear();
+//        remap_cluster(c2, to_write, contig_id, l_dc_file->header, mateseqs, aligner, aligner_to_base);
+//        if (!to_write.empty()) l_reads_to_write.insert(l_reads_to_write.end(), to_write.begin(), to_write.end());
 
     }
 
