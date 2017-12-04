@@ -8,7 +8,7 @@ GEN_DIST_SIZE = 100000
 MAX_ACCEPTABLE_IS = 20000
 
 cmd_parser = argparse.ArgumentParser(description='TranSurVeyor, a transposition caller.')
-cmd_parser.add_argument('config', help='Configuration file.')
+#cmd_parser.add_argument('config', help='Configuration file.')
 cmd_parser.add_argument('bamFile', help='Input bam file.')
 cmd_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 cmd_parser.add_argument('reference', help='Reference genome in FASTA format.')
