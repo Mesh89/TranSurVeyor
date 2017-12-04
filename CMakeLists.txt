@@ -1,7 +1,8 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.5)
 project(TranSurVeyor)
 
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
 
 set(READS_CATEGORIZER_SRC reads_categorizer.cpp sam_utils.h config.h libs/cptl_stl.h)
 add_executable(reads_categorizer ${READS_CATEGORIZER_SRC})
