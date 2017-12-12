@@ -61,7 +61,7 @@ bool operator < (const prediction_t& p1, const prediction_t& p2) {
 
 int main(int argc, char* argv[]) {
     std::string workdir = argv[1];
-    bool no_filter = std::string(argv[2]) == "no-filter";
+    bool no_filter = argc > 2 && std::string(argv[2]) == "no-filter";
     double ptn_ratio;
     int minsize;
     if (!no_filter) {
@@ -69,7 +69,6 @@ int main(int argc, char* argv[]) {
 
         config = parse_config(workdir + "/config.txt");
     }
-
 
     // we explicitly store contig_name2id to make sure the order is consistent among all execs
     std::ifstream contig_map_fin(workdir + "/contig_map");
