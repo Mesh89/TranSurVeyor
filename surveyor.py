@@ -117,7 +117,7 @@ os.system(read_categorizer_cmd)
 
 
 clip_consensus_builder_cmd = "./clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
-print "Executing:", read_categorizer_cmd
+print "Executing:", clip_consensus_builder_cmd
 os.system(clip_consensus_builder_cmd)
 
 
