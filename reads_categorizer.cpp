@@ -71,7 +71,6 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
     hts_itr_t* iter = sam_itr_querys(idx, header, region);
     bam1_t* read = bam_init1();
 
-    std::unordered_map<std::string, std::pair<bam1_t*, disc_type_t> > pairs;
     std::unordered_map<disc_type_t, samFile*> writers;
 
     samFile* clip_writer = get_writer(std::to_string(contig_id) + "-CLIP.bam", header);
@@ -84,7 +83,7 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
     int i = 0;
     while (sam_itr_next(bam_file, iter, read) >= 0 && i < MAX_BUFFER_SIZE-1) {
         if (is_valid(read, false)) {
-            bam1_t *read2 = bam_dup1(read);
+            bam1_t* read2 = bam_dup1(read);
             add_to_queue(two_way_buffer, read2, 2*MAX_BUFFER_SIZE);
             add_to_queue(forward_buffer, read2, MAX_BUFFER_SIZE);
             i++;
@@ -94,7 +93,7 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
     while (!forward_buffer.empty()) {
         while (sam_itr_next(bam_file, iter, read) >= 0) {
             if (is_valid(read, false)) {
-                bam1_t *read2 = bam_dup1(read);
+                bam1_t* read2 = bam_dup1(read);
                 bam1_t* to_destroy = add_to_queue(two_way_buffer, read2, 2*MAX_BUFFER_SIZE);
                 bam_destroy1(to_destroy);
                 add_to_queue(forward_buffer, read2, MAX_BUFFER_SIZE);
@@ -121,19 +120,10 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
             continue;
         }
 
-        std::string qname = std::string(bam_get_qname(read));
-        if (pairs.count(qname) && check_SNP(read, two_way_buffer, config.avg_depth)) {
-            auto p = pairs[qname];
-            int ok = sam_write1(writers[p.second], header, is_first_in_pair(read, p.second) ? read : p.first);
-            if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
-            bam_destroy1(p.first);
-            pairs.erase(qname);
-        }
-
         if (is_dc_pair(read)) {
             if (read->core.qual >= MIN_DC_MAPQ || mq >= MIN_DC_MAPQ) {
                 if (read->core.qual >= mq && check_SNP(read, two_way_buffer, config.avg_depth)) { // stable end
-                    if (bam_is_rev(read) && !is_right_clipped(read) || !bam_is_rev(read) && !is_left_clipped(read)) {
+                    if ((bam_is_rev(read) && !is_right_clipped(read)) || (!bam_is_rev(read) && !is_left_clipped(read))) {
                         int ok = sam_write1(bam_is_rev(read) ? ldc_writer : rdc_writer, header, read);
                         if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
                     }
@@ -161,6 +151,15 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
             }
         }
     }
+
+    for (bam1_t* r : two_way_buffer) {
+        bam_destroy1(r);
+    }
+
+    bam_destroy1(read);
+    hts_itr_destroy(iter);
+    bam_hdr_destroy(header);
+    hts_idx_destroy(idx);
 
     sam_close(clip_writer);
 
@@ -219,4 +218,7 @@ int main(int argc, char* argv[]) {
         mate_seqs_writers_by_tid[i]->close();
         delete mate_seqs_writers_by_tid[i];
     }
+
+    bam_hdr_destroy(header);
+    sam_close(bam_file);
 }
