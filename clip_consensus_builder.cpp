@@ -233,6 +233,14 @@ void build_clip_consensuses(int id, int contig_id) {
         }
     }
 
+    bam_destroy1(read);
+
+    hts_itr_destroy(iter);
+    bam_hdr_destroy(header);
+    hts_idx_destroy(idx);
+
+    sam_close(bam_file);
+
     auto lc_same_cluster = [](bam1_t* r1, bam1_t* r2) {return abs(r1->core.pos-r2->core.pos) <= config.max_sc_dist;};
     auto rc_same_cluster = [](bam1_t* r1, bam1_t* r2) {return abs(bam_endpos(r1)-bam_endpos(r2)) <= config.max_sc_dist;};
 
@@ -282,6 +290,13 @@ void build_clip_consensuses(int id, int contig_id) {
         if (consensus != NULL) {
             clip_consensuses.push_back(consensus);
         }
+    }
+
+    for (bam1_t* lc_read : lc_reads) {
+        bam_destroy1(lc_read);
+    }
+    for (bam1_t* rc_read : rc_reads) {
+        bam_destroy1(rc_read);
     }
 
     // remove non-validated clips
@@ -341,7 +356,12 @@ int main(int argc, char* argv[]) {
     for (std::vector<consensus_t*>& cv : consensus_vectors) {
         for (consensus_t* consensus : cv) {
             fa_out << ">" << consensus->name() << "\n" << consensus->consensus << "\n";
+            delete consensus;
         }
     }
     fa_out.close();
+
+    for (auto& chr : chrs) {
+        delete[] chr.second.first;
+    }
 }
