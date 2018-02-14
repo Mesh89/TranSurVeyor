@@ -113,6 +113,14 @@ void categorize(int id, int contig_id, std::string& clip_fname) {
         if (lr_dc_writers[i] != NULL) lr_dc_writers[i]->close();
         if (ll_dc_writers[i] != NULL) ll_dc_writers[i]->close();
     }
+
+    bam_destroy1(read);
+
+    hts_itr_destroy(iter);
+    bam_hdr_destroy(header);
+    hts_idx_destroy(idx);
+
+    sam_close(bam_file);
 }
 
 int main(int argc, char* argv[]) {
@@ -149,11 +157,14 @@ int main(int argc, char* argv[]) {
     for (int contig_id = 1; contig_id <= header->n_targets; contig_id++) {
         std::future<void> future = thread_pool.push(categorize, contig_id, clip_fname);
         futures.push_back(std::move(future));
+        break;
     }
     thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
         futures[i].get();
     }
+
+    sam_close(clip_file);
 }
 
 bam1_t* add_to_queue(std::deque<bam1_t*>& q, bam1_t* o, int size_limit) {
