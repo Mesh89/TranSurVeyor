@@ -157,7 +157,6 @@ int main(int argc, char* argv[]) {
     for (int contig_id = 1; contig_id <= header->n_targets; contig_id++) {
         std::future<void> future = thread_pool.push(categorize, contig_id, clip_fname);
         futures.push_back(std::move(future));
-        break;
     }
     thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
