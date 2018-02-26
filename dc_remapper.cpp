@@ -253,7 +253,6 @@ void remap_cluster(std::vector<bam1_t*>& r_cluster, std::vector<bam1_t*>& l_clus
         kept.push_back(r);
     }
 
-//    cluster.swap(kept);
     sort(kept.begin(), kept.end(), [] (bam1_t* r1, bam1_t* r2) {return get_endpoint(r1) < get_endpoint(r2);});
 }
 
@@ -319,21 +318,22 @@ std::vector<std::vector<bam1_t*> > cluster_reads(open_samFile_t* dc_file, int co
         bool rev = bam_is_rev(read);
         anchor_t a(rev ? 'L' : 'R', contig_id, read->core.pos, bam_endpos(read), 0);
         cluster_t* c = new cluster_t(a, a, DISC_TYPES.DC, 1);
+
         c->id = clusters.size();
         clusters.push_back(c);
-        clusters_map.insert(std::make_pair(c->a1.start, c));
-        clusters_map.insert(std::make_pair(c->a1.end, c));
         reads.push_back(bam_dup1(read));
     }
     for (cluster_t* c : clip_clusters) {
         c->id = -1;
         clusters.push_back(c);
-        clusters_map.insert(std::make_pair(c->a1.start, c));
-        clusters_map.insert(std::make_pair(c->a1.end, c));
+//        clusters_map.insert(std::make_pair(c->a1.start, c));
+//        clusters_map.insert(std::make_pair(c->a1.end, c));
     }
 
     sam_itr_destroy(iter);
     bam_destroy1(read);
+
+    if (clusters.empty()) return std::vector<std::vector<bam1_t*> >();
 
     // union-find datastructure
     int n_reads = reads.size();
@@ -343,22 +343,51 @@ std::vector<std::vector<bam1_t*> > cluster_reads(open_samFile_t* dc_file, int co
         sizes[i] = 1;
     }
 
+    sort(clusters.begin(), clusters.end(), [](const cluster_t* c1, const cluster_t* c2) {
+        return c1->a1 < c2->a1;
+    });
+
+    // merge first equal clusters
+    int prev;
+    do {
+        prev = clusters.size();
+        for (int i = 0; i < clusters.size()-1; i++) {
+            cluster_t* c1 = clusters[i], * c2 = clusters[i+1];
+            if (c1 != NULL && c1->a1.start == c2->a1.start && c1->a1.end == c2->a1.end) {
+                cluster_t* new_cluster = cluster_t::merge(c1, c2);
+                new_cluster->id = std::max(c1->id, c2->id); // clip clusters have id -1
+                if (std::min(c1->id, c2->id) >= 0) {
+                    merge(parents, sizes, c1->id, c2->id);
+                }
+                clusters[i] = new_cluster;
+                clusters[i+1] = NULL;
+            }
+        }
+
+        clusters.erase(std::remove(clusters.begin(), clusters.end(), (cluster_t*) NULL), clusters.end());
+    } while (prev != clusters.size());
+
+    for (cluster_t* c : clusters) {
+        clusters_map.insert(std::make_pair(c->a1.start, c));
+        clusters_map.insert(std::make_pair(c->a1.end, c));
+    }
+
+
     std::vector<int> max_dists;
-    for (int i = 0; i < 10; i++) max_dists.push_back(i);
-    for (int i = 10; i < 100; i+=10) max_dists.push_back(i);
-    for (int i = 100; i < config.max_is; i+=100) max_dists.push_back(i);
+//    for (int i = -95; i < 100; i+=5) max_dists.push_back(i);
+//    for (int i = 100; i < config.max_is; i+=100) max_dists.push_back(i);
     max_dists.push_back(config.max_is);
 
     for (int max_dist : max_dists) {
         std::priority_queue<cc_distance_t> pq;
         for (cluster_t* c1 : clusters) {
             if (c1->dead) continue;
-            auto end = clusters_map.upper_bound(c1->a1.end+max_dist);
+            auto end = clusters_map.upper_bound(c1->a1.end+std::max(max_dist, 0));
             for (auto map_it = clusters_map.lower_bound(c1->a1.start); map_it != end; map_it++) {
                 cluster_t* c2 = map_it->second;
-                if (c1 != c2 && cluster_t::can_merge(c1, c2, config) &&
-                    (c1->a1.start <= c2->a1.start)) {
-                    pq.push(cc_distance_t(cluster_t::distance(c1, c2), c1, c2));
+                int dist = anchor_t::distance(c1->a1, c2->a1);
+                if (c1 != c2 && anchor_t::can_merge(c1->a1, c2->a1, config) && c1->a1.start <= c2->a1.start && dist <= max_dist) {
+                    pq.push(cc_distance_t(dist, c1, c2));
                 }
             }
         }
@@ -384,7 +413,7 @@ std::vector<std::vector<bam1_t*> > cluster_reads(open_samFile_t* dc_file, int co
             auto end = clusters_map.upper_bound(new_cluster->a1.end + max_dist);
             for (auto map_it = clusters_map.lower_bound(new_cluster->a1.start - max_dist);
                  map_it != end; map_it++) {
-                if (cluster_t::can_merge(new_cluster, map_it->second, config)) {
+                if (!map_it->second->dead && cluster_t::can_merge(new_cluster, map_it->second, config)) {
                     pq.push(cc_distance_t(cluster_t::distance(new_cluster, map_it->second), new_cluster,
                                           map_it->second));
                 }
@@ -468,18 +497,6 @@ void remap(int id, int contig_id, std::vector<cluster_t*>& r_clip_cluster, std::
 
     std::vector<bam1_t*> l_reads_to_write, r_reads_to_write;
 
-//    for (std::vector<bam1_t*>& l_cluster : l_clusters) {
-//        int pos1 = l_cluster[0]->core.pos;
-//        int pos2 = bam_endpos(l_cluster[l_cluster.size()-1]);
-//        std::cout << "L " << pos1 << "-" << pos2 << "  " << l_cluster.size() << std::endl;
-//    }
-//    for (std::vector<bam1_t*>& r_cluster : r_clusters) {
-//        int pos1 = bam_endpos(r_cluster[r_cluster.size()-1]);
-//        int pos2 = r_cluster[0]->core.pos;
-//        std::cout << "R " << pos1 << "-" << pos2 << "  " << r_cluster.size() << std::endl;
-//    }
-//    return;
-
     std::priority_queue<cc_v_distance_t> pq;
     auto score_f = [](const std::vector<bam1_t*>& v1, const std::vector<bam1_t*>& v2) {return v1.size()*v2.size();};
 
@@ -539,7 +556,6 @@ void remap(int id, int contig_id, std::vector<cluster_t*>& r_clip_cluster, std::
 //        to_write.clear();
 //        remap_cluster(c2, to_write, contig_id, l_dc_file->header, mateseqs, aligner, aligner_to_base);
 //        if (!to_write.empty()) l_reads_to_write.insert(l_reads_to_write.end(), to_write.begin(), to_write.end());
-
     }
 
     std::string l_dc_remapped_fname = workdir + "/workspace/L" + std::to_string(contig_id) + "-DC.remap.bam";
@@ -552,11 +568,15 @@ void remap(int id, int contig_id, std::vector<cluster_t*>& r_clip_cluster, std::
     close_samFile(r_dc_file);
 
     // destroy reads
-    for (bam1_t* r : l_reads_to_write) {
-        bam_destroy1(r);
+    for (std::vector<bam1_t*>& l_cluster : l_clusters) {
+        for (bam1_t* r : l_cluster) {
+            bam_destroy1(r);
+        }
     }
-    for (bam1_t* r : r_reads_to_write) {
-        bam_destroy1(r);
+    for (std::vector<bam1_t*>& r_cluster : r_clusters) {
+        for (bam1_t* r : r_cluster) {
+            bam_destroy1(r);
+        }
     }
 }
 
@@ -612,6 +632,10 @@ int main(int argc, char* argv[]) {
     thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
         futures[i].get();
+    }
+
+    for (auto& chr : chrs) {
+        delete[] chr.second.first;
     }
 
     // split DC files
