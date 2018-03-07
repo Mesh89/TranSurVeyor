@@ -14,7 +14,7 @@ int support(prediction_t& pred) {
     return pred.disc_pairs + std::min(pred.bp1.sc_reads, pred.bp2.sc_reads);
 }
 
-double ptn_score(prediction_t& pred) {
+double ptn_score(const prediction_t& pred) {
 //    return std::max(double(pred.disc_pairs+pred.bp1.sc_reads)/std::max(pred.bp1.spanning_reads,1),
 //                    double(pred.disc_pairs+pred.bp2.sc_reads)/std::max(pred.bp2.spanning_reads,1));
     return double(pred.disc_pairs+pred.bp1.sc_reads)/std::max(pred.bp1.spanning_reads,1);
@@ -44,18 +44,19 @@ std::string formatted_print(prediction_t& pred) {
 std::unordered_set<int> in_reps_ids;
 
 bool operator < (const prediction_t& p1, const prediction_t& p2) {
-    bool in_rep1 = in_reps_ids.count(p1.id);
-    bool in_rep2 = in_reps_ids.count(p2.id);
-    if (in_rep1 != in_rep2) return in_rep1 < in_rep2;
-    if (p1.bp1.sc_reads*p1.bp2.sc_reads != p2.bp1.sc_reads*p2.bp2.sc_reads) {
-        return p1.bp1.sc_reads*p1.bp2.sc_reads > p2.bp1.sc_reads*p2.bp2.sc_reads;
-    }
-    if (p1.disc_pairs != p2.disc_pairs) {
-        return p1.disc_pairs > p2.disc_pairs;
-    }
-    if (p1.pval != p2.pval) {
-        return p1.pval < p2.pval;
-    }
+//    bool in_rep1 = in_reps_ids.count(p1.id);
+//    bool in_rep2 = in_reps_ids.count(p2.id);
+//    if (in_rep1 != in_rep2) return in_rep1 < in_rep2;
+//    if (p1.bp1.sc_reads*p1.bp2.sc_reads != p2.bp1.sc_reads*p2.bp2.sc_reads) {
+//        return p1.bp1.sc_reads*p1.bp2.sc_reads > p2.bp1.sc_reads*p2.bp2.sc_reads;
+//    }
+//    if (p1.disc_pairs != p2.disc_pairs) {
+//        return p1.disc_pairs > p2.disc_pairs;
+//    }
+//    if (p1.pval != p2.pval) {
+//        return p1.pval < p2.pval;
+//    }
+    return ptn_score(p1) > ptn_score(p2);
     return p1.id < p2.id;
 }
 

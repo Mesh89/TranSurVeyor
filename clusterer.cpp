@@ -40,7 +40,7 @@ void clusterize(int id, int contig_id, int contig2_id, disc_type_t dt, std::stri
     if (bam_file != NULL) {
         int code = sam_index_build(bam_fname.c_str(), 0);
         if (code != 0) {
-            throw "Cannot index " + bam_fname;
+            throw "Cannot index " + bam_fname + ", code " + std::to_string(code);
         }
 
         hts_idx_t* idx = sam_index_load(bam_file, bam_fname.c_str());
@@ -62,6 +62,12 @@ void clusterize(int id, int contig_id, int contig2_id, disc_type_t dt, std::stri
                           anchor_t(bam_is_mrev(read) ? 'L' : 'R', contig2_id, read->core.mpos, get_mate_endpos(read), 0);
             clusters.push_back(new cluster_t(a1, a2, dt, 1));
         }
+
+        bam_destroy1(read);
+        hts_itr_destroy(iter);
+        hts_idx_destroy(idx);
+
+        sam_close(bam_file);
     }
 
     std::string line;
