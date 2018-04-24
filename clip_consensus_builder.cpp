@@ -1,9 +1,7 @@
 #include <fstream>
 #include <iostream>
-#include <algorithm>
 #include <htslib/sam.h>
 #include <htslib/kseq.h>
-#include <cstdio>
 #include <unistd.h>
 KSEQ_INIT(int, read)
 
@@ -11,8 +9,6 @@ KSEQ_INIT(int, read)
 #include "libs/cptl_stl.h"
 #include "sam_utils.h"
 #include "sw_utils.h"
-#include "libs/ssw_cpp.h"
-#include "cluster.h"
 
 config_t config;
 std::mutex mtx;

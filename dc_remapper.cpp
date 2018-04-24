@@ -7,7 +7,6 @@
 #include <htslib/sam.h>
 #include <htslib/kseq.h>
 #include <cassert>
-#include <htslib/hts.h>
 
 KSEQ_INIT(int, read)
 

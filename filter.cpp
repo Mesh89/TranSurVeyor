@@ -1,7 +1,6 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_set>
-#include <cassert>
 
 #include "config.h"
 #include "cluster.h"

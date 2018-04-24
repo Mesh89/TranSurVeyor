@@ -4,7 +4,6 @@
 #include <unordered_set>
 #include <numeric>
 #include <htslib/sam.h>
-#include <htslib/hts.h>
 
 #include "config.h"
 #include "cluster.h"
