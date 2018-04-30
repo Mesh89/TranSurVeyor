@@ -117,7 +117,7 @@ os.system(read_categorizer_cmd)
 
 
 clip_consensus_builder_cmd = "./clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
-print "Executing:", clip_consensus_builder_cmd
+print "Executing:", read_categorizer_cmd
 os.system(clip_consensus_builder_cmd)
 
 
@@ -142,9 +142,9 @@ os.system("ls %s/workspace/*-DC.??? | rev | cut -d'/' -f1 | rev > %s/workspace/d
           % (cmd_args.workdir, cmd_args.workdir))
 
 
-clusterer_cmd = "./clusterer %s" % cmd_args.workdir
-print "Executing:", clusterer_cmd
-os.system(clusterer_cmd)
+# clusterer_cmd = "./clusterer %s" % cmd_args.workdir
+# print "Executing:", clusterer_cmd
+# os.system(clusterer_cmd)
 
 
 add_filtering_info_cmd = "./add_filtering_info %s %s" % (cmd_args.bamFile, cmd_args.workdir)

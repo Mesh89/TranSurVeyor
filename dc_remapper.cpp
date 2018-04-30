@@ -4,9 +4,10 @@
 #include <map>
 #include <set>
 #include <unistd.h>
+#include <cassert>
+
 #include <htslib/sam.h>
 #include <htslib/kseq.h>
-#include <cassert>
 
 KSEQ_INIT(int, read)
 
@@ -24,6 +25,8 @@ std::mutex mtx;
 std::vector<std::string> contig_id2name;
 std::unordered_map<std::string, int> contig_name2id;
 std::unordered_map<std::string, std::pair<char*, size_t> > chrs;
+
+std::ofstream predictions_writer;
 
 const int SMALL_SAMPLE_SIZE = 15;
 const int CLUSTER_CANDIDATES = 3;
@@ -89,7 +92,11 @@ int compute_score_supp(region_t& region, std::vector<bam1_t*>& reads, std::unord
         int mask_len = s.length()/2;
         if (mask_len < 15) mask_len = 15;
 
-        if ((do_rc && !bam_is_rev(r)) || (!do_rc && bam_is_rev(r))) {
+        // mateseqs contains seqs converted to positive strand
+        //  do_rc: pos stable strand = pos unstable strand and neg stable strand = neg unstable strand
+        // !do_rc: pos stable strand = neg unstable strand and neg stable strand = pos unstable strand
+        if ((do_rc && bam_is_rev(r)) ||      //  do_rc: rc mate when neg stable
+            (!do_rc && !bam_is_rev(r))) {    // !do_rc: rc mate when pos strand
             rc(s);
         }
         aligner.Align(s.c_str(), chrs[contig_id2name[region.contig_id]].first+region.start, region.end-region.start,
@@ -157,11 +164,33 @@ samFile* open_writer(std::string name, bam_hdr_t* header) {
     return remapped_file;
 }
 
-void remap_cluster(std::vector<bam1_t*>& r_cluster, std::vector<bam1_t*>& l_cluster, std::vector<bam1_t*>& kept, int contig_id, bam_hdr_t* header,
-                   std::unordered_map<std::string, std::string>& mateseqs,
+prediction_t make_prediction(std::vector<bam1_t*> reads, int contig_id, int mcontig_id) {
+    auto start_comp = [] (const bam1_t* r1, const bam1_t* r2) { return r1->core.pos < r2->core.pos; };
+    auto end_comp = [] (const bam1_t* r1, const bam1_t* r2) { return bam_endpos(r1) < bam_endpos(r2); };
+    int start_pos = (*std::min_element(reads.begin(), reads.end(), start_comp))->core.pos;
+    int end_pos = bam_endpos(*std::max_element(reads.begin(), reads.end(), end_comp));
+    anchor_t a1(bam_is_rev(reads[0]) ? 'L' : 'R', contig_id, start_pos, end_pos, 0);
+
+    auto mstart_comp = [] (const bam1_t* r1, const bam1_t* r2) { return r1->core.mpos < r2->core.mpos; };
+    auto mend_comp = [] (const bam1_t* r1, const bam1_t* r2) { return get_mate_endpos(r1) < bam_endpos(r2); };
+    int mstart_pos = (*std::min_element(reads.begin(), reads.end(), mstart_comp))->core.mpos;
+    int mend_pos = get_mate_endpos(*std::max_element(reads.begin(), reads.end(), mend_comp));
+    anchor_t a2(bam_is_mrev(reads[0]) ? 'L' : 'R', mcontig_id, mstart_pos, mend_pos, 0);
+
+    cluster_t* c = new cluster_t(a1, a2, DISC_TYPES.DC, reads.size());
+    prediction_t prediction(c, DISC_TYPES.DC);
+    delete c;
+    return prediction;
+}
+
+std::atomic<int> loc_pred_id;
+
+void remap_cluster(std::vector<bam1_t*>& r_cluster, std::vector<bam1_t*>& l_cluster, std::vector<bam1_t*>& kept,
+                   int contig_id, bam_hdr_t* header, std::unordered_map<std::string, std::string>& mateseqs,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& aligner_to_base) {
     std::vector<region_t> regions;
 
+    // sort by mate chr and mate pos
     std::vector<bam1_t*> full_cluster;
     full_cluster.insert(full_cluster.end(), l_cluster.begin(), l_cluster.end());
     full_cluster.insert(full_cluster.end(), r_cluster.begin(), r_cluster.end());
@@ -170,6 +199,7 @@ void remap_cluster(std::vector<bam1_t*>& r_cluster, std::vector<bam1_t*>& l_clus
         else return r1->core.mpos < r2->core.mpos;
     });
 
+    // cluster the reads according to the mates
     std::vector<bam1_t*> subcluster;
     for (bam1_t* r : full_cluster) {
         if (!subcluster.empty() && (subcluster[0]->core.mtid != r->core.mtid ||
@@ -189,6 +219,7 @@ void remap_cluster(std::vector<bam1_t*>& r_cluster, std::vector<bam1_t*>& l_clus
     filter_w_cigar.report_cigar = true;
     bool is_rc;
 
+    // if too much regions and too many reads, subsample
     if (full_cluster.size() > SMALL_SAMPLE_SIZE && regions.size() > CLUSTER_CANDIDATES) {
         std::vector<bam1_t*> small_sample(full_cluster);
         std::random_shuffle(small_sample.begin(), small_sample.end());
@@ -225,11 +256,10 @@ void remap_cluster(std::vector<bam1_t*>& r_cluster, std::vector<bam1_t*>& l_clus
     compute_score(base_region, full_cluster, mateseqs, NULL, NULL, aligner_to_base, filter, is_rc);
 
     if (base_region.score >= best_region.score*BASE_ACCEPTANCE_THRESHOLD) {
-//        std::cout << "Bringing home " << cluster[0]->core.pos << std::endl;
-//        cluster.clear();
         return;
     }
 
+    std::vector<bam1_t*> stable_pos, stable_neg;
     std::vector<int> offsets;
     std::vector<std::string> cigars;
     compute_score(best_region, full_cluster, mateseqs, &offsets, &cigars, aligner, filter_w_cigar, is_rc);
@@ -239,17 +269,39 @@ void remap_cluster(std::vector<bam1_t*>& r_cluster, std::vector<bam1_t*>& l_clus
         bam1_t* r = full_cluster[i];
         r->core.mtid = best_region.original_bam_id;
         r->core.mpos = best_region.start + offsets[i];
-        if (is_rc) {
+        if (is_rc == bam_is_rev(r)) {
             r->core.flag |= BAM_FMREVERSE; //sets flag to true
-                assert(bam_is_mrev(r));
+            assert(bam_is_mrev(r));
         } else {
             r->core.flag &= ~BAM_FMREVERSE; //sets flag to false
             assert(!bam_is_mrev(r));
         }
 
+        if (!bam_is_rev(r)) {
+            stable_pos.push_back(r);
+        } else {
+            stable_neg.push_back(r);
+        }
+
         bam_aux_update_str(r, "MC", cigars[i].length()+1, cigars[i].c_str());
 
         kept.push_back(r);
+    }
+
+    int pred_id = loc_pred_id++;
+    if (!stable_pos.empty()) {
+        prediction_t pred = make_prediction(stable_pos, contig_id, best_region.contig_id);
+        pred.id = pred_id;
+        mtx.lock();
+        predictions_writer << pred.to_str() << "\n";
+        mtx.unlock();
+    }
+    if (!stable_neg.empty()) {
+        prediction_t pred = make_prediction(stable_neg, contig_id, best_region.contig_id);
+        pred.id = pred_id;
+        mtx.lock();
+        predictions_writer << pred.to_str() << "\n";
+        mtx.unlock();
     }
 
     sort(kept.begin(), kept.end(), [] (bam1_t* r1, bam1_t* r2) {return get_endpoint(r1) < get_endpoint(r2);});
@@ -605,6 +657,8 @@ int main(int argc, char* argv[]) {
         contig_name2id[contig_name] = contig_id;
     }
 
+    predictions_writer.open(workspace + "/predictions.raw2");
+
     std::string clip_name, clip_seq;
     std::ifstream clips_fin(workspace + "/CLIPS.fa");
     std::unordered_map<int, std::vector<cluster_t*> > r_clip_clusters, l_clip_clusters;
@@ -708,4 +762,6 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+
+    predictions_writer.close();
 }

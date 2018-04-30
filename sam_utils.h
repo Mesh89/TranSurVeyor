@@ -7,14 +7,15 @@
 #include <queue>
 #include <cmath>
 #include <cstring>
-#include <htslib/sam.h>
+
+#include "htslib/sam.h"
 
 extern int MIN_MAPQ;
 extern int MIN_CLIP_LEN;
 extern double MAX_SEQ_ERROR;
 extern int MAX_READ_SUPPORTED;
 
-int get_mate_endpos(bam1_t* r);
+int get_mate_endpos(const bam1_t* r);
 
 typedef uint8_t disc_type_t;
 static struct disc_types_t {
@@ -134,7 +135,7 @@ bool is_first_in_pair(bam1_t* r, disc_type_t dt) {
     } else return false;
 }
 
-int get_mate_endpos(bam1_t* r) {
+int get_mate_endpos(const bam1_t* r) {
     uint8_t *mcs = bam_aux_get(r, "MC");
     if (mcs == NULL) return r->core.mpos; // if no MC, return mpos
 
