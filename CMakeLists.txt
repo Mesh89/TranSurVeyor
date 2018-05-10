@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 project(TranSurVeyor)
 
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
 
 include_directories(htslib-1.7/include)
 link_directories(htslib-1.7/lib)
