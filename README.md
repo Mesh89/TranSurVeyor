@@ -2,8 +2,16 @@
 
 ## Compiling
 
-To be compiled, TranSurveyor requires g++ 4.7.2 or higher and htslib 1.4 or higher (https://github.com/samtools/htslib). It was tested using g++ 4.7.2 and htslib 1.6, so those versions are recommended.
-Make sure that htslib is in your library search path, and run 
+To be compiled, TranSurveyor requires g++ 4.7.2.
+
+htslib 1.7 is included in the source, zipped. First of all, you should build it by using the provided script
+```
+./build_htslib.sh
+```
+If htslib does not build correctly, please refer to https://github.com/samtools/htslib
+
+Then, run
+
 ```
 cmake . && make
 ```
