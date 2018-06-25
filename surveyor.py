@@ -138,15 +138,6 @@ print "Executing:", dc_remapper_cmd
 os.system(dc_remapper_cmd)
 
 
-os.system("ls %s/workspace/*-DC.??? | rev | cut -d'/' -f1 | rev > %s/workspace/dc-files.txt"
-          % (cmd_args.workdir, cmd_args.workdir))
-
-
-# clusterer_cmd = "./clusterer %s" % cmd_args.workdir
-# print "Executing:", clusterer_cmd
-# os.system(clusterer_cmd)
-
-
 add_filtering_info_cmd = "./add_filtering_info %s %s" % (cmd_args.bamFile, cmd_args.workdir)
 print "Executing:", add_filtering_info_cmd
 os.system(add_filtering_info_cmd)

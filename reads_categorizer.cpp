@@ -5,9 +5,9 @@
 #include <queue>
 #include <set>
 #include <unordered_map>
+
 #include <htslib/hts.h>
 #include <htslib/sam.h>
-
 #include "sam_utils.h"
 #include "config.h"
 #include "libs/cptl_stl.h"
@@ -82,7 +82,7 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
 
     int i = 0;
     while (sam_itr_next(bam_file, iter, read) >= 0 && i < MAX_BUFFER_SIZE-1) {
-        if (is_valid(read, false)) {
+        if (is_valid(read, false, true)) {
             bam1_t* read2 = bam_dup1(read);
             add_to_queue(two_way_buffer, read2, 2*MAX_BUFFER_SIZE);
             add_to_queue(forward_buffer, read2, MAX_BUFFER_SIZE);
@@ -92,7 +92,7 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
 
     while (!forward_buffer.empty()) {
         while (sam_itr_next(bam_file, iter, read) >= 0) {
-            if (is_valid(read, false)) {
+            if (is_valid(read, false, true)) {
                 bam1_t* read2 = bam_dup1(read);
                 bam1_t* to_destroy = add_to_queue(two_way_buffer, read2, 2*MAX_BUFFER_SIZE);
                 bam_destroy1(to_destroy);
@@ -105,30 +105,31 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
         forward_buffer.pop_front();
 
         bam_aux_get(read, "MQ");
+        uint8_t mapq = is_primary(read) ? read->core.qual : 60;
         int64_t mq = get_mq(read);
-        if (read->core.qual < MIN_MAPQ && mq < MIN_MAPQ) continue;
+        if (mapq < MIN_MAPQ && mq < MIN_MAPQ) continue;
 
         // clipped read
-        if (read->core.qual >= MIN_MAPQ && is_clipped(read) && check_SNP(read, two_way_buffer, config.avg_depth)) {
+        if (mapq >= MIN_MAPQ && is_clipped(read) && check_SNP(read, two_way_buffer, config.avg_depth)) {
             int ok = sam_write1(clip_writer, header, read);
             if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
         }
 
         // we accept one of the mates having mapq 0 only if they are on different chromosomes
-        if ((read->core.qual < MIN_MAPQ || mq < MIN_MAPQ)
+        if ((mapq < MIN_MAPQ || mq < MIN_MAPQ)
             && !is_dc_pair(read) && !is_mate_unmapped(read)) {
             continue;
         }
 
         if (is_dc_pair(read)) {
-            if (read->core.qual >= MIN_DC_MAPQ || mq >= MIN_DC_MAPQ) {
-                if (read->core.qual >= mq && check_SNP(read, two_way_buffer, config.avg_depth)) { // stable end
+            if (mapq >= MIN_DC_MAPQ || mq >= MIN_DC_MAPQ) {
+                if (mapq >= mq && check_SNP(read, two_way_buffer, config.avg_depth)) { // stable end
                     if ((bam_is_rev(read) && !is_right_clipped(read)) || (!bam_is_rev(read) && !is_left_clipped(read))) {
                         int ok = sam_write1(bam_is_rev(read) ? ldc_writer : rdc_writer, header, read);
                         if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
                     }
                 }
-                if (read->core.qual <= mq) { // save read seq for remapping
+                if (mapq <= mq) { // save read seq for remapping
                     const uint8_t* read_seq = bam_get_seq(read);
                     char read_seq_chr[MAX_READ_SUPPORTED];
                     for (int i = 0; i < read->core.l_qseq; i++) {

@@ -79,8 +79,8 @@ int64_t get_mq(bam1_t* r) {
     return mq == NULL ? 0 : bam_aux2i(mq);
 }
 
-bool is_valid(bam1_t* r, bool check_map_q = true) {
-    if (is_unmapped(r) || !is_primary(r)) {
+bool is_valid(bam1_t* r, bool check_map_q = true, bool check_primary = true) {
+    if (is_unmapped(r) || (check_primary && !is_primary(r))) {
         return false;
     }
     if (!check_map_q) return true;
@@ -226,7 +226,7 @@ bool check_SNP(bam1_t* read, std::deque<bam1_t*>& buffer, double avg_depth) {
 
     int bonus = (int) std::ceil(MAX_SEQ_ERROR * (endpos-read->core.pos+1));
     for (int i = 0; i < read->core.l_qseq; i++) {
-        if (tot[i] > 0 && tot[i]-diff[i] < std::min(avg_depth*0.4, tot[i]*0.4)) { //diff[i]/(float)tot[i] >= 0.6) {
+        if (tot[i] > 0 && tot[i]-diff[i] < std::min(avg_depth*0.4, tot[i]*0.4)) {
             bonus--;
         }
 
