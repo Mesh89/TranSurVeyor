@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
 
     std::vector<prediction_t*> preds;
 
-    std::ifstream predictions_fin(workspace + "/predictions.raw");
+    std::ifstream predictions_fin(workspace + "/predictions.raw2");
     std::string line;
     while (predictions_fin >> line) {
         prediction_t* pred = new prediction_t(line);
