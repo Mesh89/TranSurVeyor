@@ -41,10 +41,12 @@ bool operator < (const prediction_t& p1, const prediction_t& p2) {
 int main(int argc, char* argv[]) {
     std::string workdir = argv[1];
     bool no_filter = argc > 2 && std::string(argv[2]) == "no-filter";
+    bool use_sc = false;
     double ptn_ratio;
     int minsize;
     if (!no_filter) {
         ptn_ratio = argc > 2 ? std::stod(argv[2]) : 0.33;
+        if (argc > 3 && std::string(argv[3]) == "use_sc") use_sc = true;
 
         config = parse_config(workdir + "/config.txt");
     }
@@ -63,6 +65,7 @@ int main(int argc, char* argv[]) {
     std::string line;
     while (predictions_fin >> line) {
         prediction_t pred(line);
+        if (!use_sc) pred.bp1.sc_reads = pred.bp2.sc_reads = 0;
 
         if (no_filter) {
             retained.push_back(pred);
