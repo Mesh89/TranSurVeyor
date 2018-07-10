@@ -8,15 +8,22 @@ GEN_DIST_SIZE = 100000
 MAX_ACCEPTABLE_IS = 20000
 
 cmd_parser = argparse.ArgumentParser(description='TranSurVeyor, a transposition caller.')
-#cmd_parser.add_argument('config', help='Configuration file.')
 cmd_parser.add_argument('bamFile', help='Input bam file.')
 cmd_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 cmd_parser.add_argument('reference', help='Reference genome in FASTA format.')
 cmd_parser.add_argument('--threads', type=int, default=1, help='Number of threads to be used.')
-cmd_parser.add_argument('--samtools', help='Samtools path.', default='samtools')
+cmd_parser.add_argument('--samtools', default='samtools', help='Samtools path.')
 cmd_parser.add_argument('--bwa', default='bwa', help='BWA path.')
-cmd_parser.add_argument('--maxSCDist', type=int, default=10, help='Max SC distance.')
+cmd_parser.add_argument('--maxSCDist', type=int, default=10, help='Max distance (in bp) for two clips to be considered '
+                                                                  'representing the same breakpoint.')
 cmd_args = cmd_parser.parse_args()
+
+
+# Check if workdir is empty
+
+if os.listdir(cmd_args.workdir):
+    print "Workdir is not empty!"
+    exit(1)
 
 
 # Create config file in workdir
