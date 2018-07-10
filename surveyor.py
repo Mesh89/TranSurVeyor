@@ -15,7 +15,6 @@ cmd_parser.add_argument('reference', help='Reference genome in FASTA format.')
 cmd_parser.add_argument('--threads', type=int, default=1, help='Number of threads to be used.')
 cmd_parser.add_argument('--samtools', help='Samtools path.', default='samtools')
 cmd_parser.add_argument('--bwa', default='bwa', help='BWA path.')
-cmd_parser.add_argument('--minSVLen', type=int, default=50, help='Min SV length.')
 cmd_parser.add_argument('--maxSCDist', type=int, default=10, help='Max SC distance.')
 cmd_args = cmd_parser.parse_args()
 
@@ -24,7 +23,6 @@ cmd_args = cmd_parser.parse_args()
 
 config_file = open(cmd_args.workdir + "/config.txt", "w")
 config_file.write("threads %d\n" % cmd_args.threads)
-config_file.write("min_sv_len %d\n" % cmd_args.minSVLen)
 config_file.write("max_sc_dist %d\n" % cmd_args.maxSCDist)
 
 

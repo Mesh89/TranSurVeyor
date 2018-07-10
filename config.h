@@ -20,7 +20,7 @@ struct config_t {
     int read_len;
     int avg_depth;
     int max_is, min_is;
-    int min_sv_len, max_sc_dist;
+    int max_sc_dist;
 };
 
 struct repeat_t {
@@ -83,7 +83,6 @@ config_t parse_config(std::string file) {
     config.avg_depth = stoi(config_params["avg_depth"]);
     config.min_is = stoi(config_params["min_is"]);
     config.max_is = stoi(config_params["max_is"]);
-    config.min_sv_len = stoi(config_params["min_sv_len"]);
     config.max_sc_dist = stoi(config_params["max_sc_dist"]);
     return config;
 };
