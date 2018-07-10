@@ -57,6 +57,27 @@ After TranSurveyor has been successfully run, the calls can be retrieved with th
 ./filter /path/to/working/directory
 ```
 
+## Readme
+
+Here is a sample transposition:
+
+```
+ID=1 BP1=F:chr5:135114483 BP2=R:chr12:59936709 DISCORDANT=66 SCORE=2.275862
+ID=1 BP1=R:chr5:135114528 BP2=F:chr12:59937336 DISCORDANT=55 SCORE=3.666667
+```
+
+Each line is a junction, i.e. two regions which are far away on the reference but predicted to be adjacent in the sample. A transposition can be represented by two junctions.
+
+ID is unique for each transposition: when two junctions share the same ID, they refer to the same transposition. Most junctions are paired: unfortunately, sometimes TranSurVeyor is only able to
+prdict one junction. We are working to improve this.
+
+BP1 and BP2 are the two breakpoints in a junction. They are in the format STRAND:CHR_NAME:POSITION. F stands for Forward and R stands for Reverse strand. TranSurVeyor predicts the BP1 to be 
+breakpoint near the insertion site, while BP2 the breakpoint of the inserted sequence. For instance, the example transposition is predicted to be inserted into chromosome 5, between 135114483 and
+135114528, and the predicted inserted sequence is chr12:59936709-59937336.
+
+DISCORDANT is the number of discordant read pairs supporting the junction, and SCORE is the positive-to-negative score, i.e. a measure of confidence: the highest the score, the more confident the 
+junction.
+
 ## Notes
 
 TranSurveyor is a very young software, and it has only been used by its authours on a handful of datasets. 
