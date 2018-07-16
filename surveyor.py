@@ -16,6 +16,9 @@ cmd_parser.add_argument('--samtools', default='samtools', help='Samtools path.')
 cmd_parser.add_argument('--bwa', default='bwa', help='BWA path.')
 cmd_parser.add_argument('--maxSCDist', type=int, default=10, help='Max distance (in bp) for two clips to be considered '
                                                                   'representing the same breakpoint.')
+cmd_parser.add_argument('--maxTRAsize', type=int, default=1000, help='Maximum size for which TranSurVeyor will try to '
+                                                                     'predict both breakpoints.')
+
 cmd_args = cmd_parser.parse_args()
 
 
@@ -31,6 +34,7 @@ if os.listdir(cmd_args.workdir):
 config_file = open(cmd_args.workdir + "/config.txt", "w")
 config_file.write("threads %d\n" % cmd_args.threads)
 config_file.write("max_sc_dist %d\n" % cmd_args.maxSCDist)
+config_file.write("max_tra_size %d\n" % cmd_args.maxTRAsize)
 
 
 # Find read length

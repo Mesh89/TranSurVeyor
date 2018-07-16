@@ -16,49 +16,9 @@ int MAX_READ_SUPPORTED = 10000;
 
 struct config_t {
     int threads;
-    std::string rmsk_fname = "", simple_rep_fname = "";
-    int read_len;
     int avg_depth;
     int max_is, min_is;
-    int max_sc_dist;
-};
-
-struct repeat_t {
-    std::string chr;
-    int start, end;
-    std::string type;
-
-    repeat_t() {}
-    repeat_t(std::string& line) {
-        char temp[100];
-        std::stringstream ss(line);
-
-        for (int i = 0; i < 5; i++) {
-            ss >> temp;
-        }
-        ss >> chr >> start >> end;
-
-        ss >> temp >> temp;
-        ss >> type >> temp;
-        type += "-" + std::string(temp);
-    }
-};
-
-struct simple_repeat_t {
-    std::string chr;
-    int start, end;
-    int period;
-
-    simple_repeat_t() {}
-    simple_repeat_t(std::string& line) {
-        char temp[100];
-        std::stringstream ss(line);
-
-        ss >> temp;
-        ss >> chr >> start >> end;
-        ss >> temp;
-        ss >> period;
-    }
+    int max_sc_dist, max_tra_size;
 };
 
 
@@ -73,17 +33,11 @@ config_t parse_config(std::string file) {
 
     config_t config;
     config.threads = stoi(config_params["threads"]);
-    if (config_params.count("rmsk")) {
-        config.rmsk_fname = config_params["rmsk"];
-    }
-    if (config_params.count("simple_rep")) {
-        config.simple_rep_fname = config_params["simple_rep"];
-    }
-    config.read_len = stoi(config_params["read_len"]);
     config.avg_depth = stoi(config_params["avg_depth"]);
     config.min_is = stoi(config_params["min_is"]);
     config.max_is = stoi(config_params["max_is"]);
     config.max_sc_dist = stoi(config_params["max_sc_dist"]);
+    config.max_tra_size = stoi(config_params["max_tra_size"]);
     return config;
 };
 

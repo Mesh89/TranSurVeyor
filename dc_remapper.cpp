@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <unistd.h>
+#include <climits>
 #include <cassert>
 
 #include <htslib/sam.h>
@@ -78,8 +79,33 @@ std::string print_region(region_t region) {
 }
 
 region_t get_region(std::vector<bam1_t*> subcluster, std::string& m_contig_name) {
-    int start = subcluster[0]->core.mpos - config.max_is;
-    int end = get_mate_endpos(subcluster[subcluster.size()-1]) + config.max_is;
+    bam1_t* leftmost_reverse_mate = NULL, * rightmost_forward_mate = NULL;
+    /* gets two regions
+     * 1. from left-most reverse read, max_is to the left and max_tra_size to the right
+     * 2. from right-most forward read, max_is to the right and max_tra_size to the left
+     */
+    for (bam1_t* r : subcluster) { // get leftmost reverse read
+        if (bam_is_mrev(r) && (leftmost_reverse_mate == NULL || leftmost_reverse_mate->core.mpos > r->core.mpos)) {
+            leftmost_reverse_mate = r;
+        }
+    }
+    for (bam1_t* r : subcluster) { // get rightmost forward read
+        if (!bam_is_mrev(r) && (rightmost_forward_mate == NULL || rightmost_forward_mate->core.mpos < r->core.mpos)) {
+            rightmost_forward_mate = r;
+        }
+    }
+
+    int start = INT_MAX;
+    int end = 0;
+    if (leftmost_reverse_mate != NULL) {
+        start = std::min(start, leftmost_reverse_mate->core.mpos-config.max_is);
+        end = std::max(end, leftmost_reverse_mate->core.mpos+config.max_tra_size);
+    }
+    if (rightmost_forward_mate != NULL) {
+        start = std::min(start, rightmost_forward_mate->core.mpos-config.max_tra_size);
+        end = std::max(end, rightmost_forward_mate->core.mpos+config.max_is);
+    }
+
     std::pair<char *, size_t> chr = chrs[m_contig_name];
     int contig_len = chr.second;
     return region_t(contig_name2id[m_contig_name], subcluster[0]->core.mtid, std::max(0,start), std::min(end,contig_len));
@@ -165,6 +191,7 @@ int compute_score_supp(region_t& region, std::vector<bam1_t*>& reads, std::unord
 void compute_score(region_t& region, std::vector<bam1_t*>& reads, std::unordered_map<std::string, std::string>& mateseqs,
                    std::vector<clip_cluster_t*> clip_clusters, std::vector<int>* offsets, std::vector<std::string>* cigars,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Filter& filter, bool& is_rc) {
+
     int score = compute_score_supp(region, reads, mateseqs, clip_clusters, NULL, NULL, aligner, filter, false);
     int rc_score = compute_score_supp(region, reads, mateseqs, clip_clusters, NULL, NULL, aligner, filter, true);
     region.score = std::max(score, rc_score);
@@ -654,6 +681,7 @@ void remap(int id, int contig_id,   std::vector<clip_cluster_t*>& r_clip_cluster
             }
         }
     }
+
 
     std::string l_dc_remapped_fname = workdir + "/workspace/L" + std::to_string(contig_id) + "-DC.remap.bam";
     write_and_index_file(l_reads_to_write, l_dc_remapped_fname, l_dc_file->header);
