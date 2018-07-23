@@ -69,9 +69,6 @@ bool operator < (const cc_v_distance_t& ccd1, const cc_v_distance_t& ccd2) { // 
     return ccd1.distance < ccd2.distance;
 }
 
-void remap_supp(int contig_id, std::unordered_map<std::string, std::string> &mateseqs, std::string &qname,
-                const std::string &l_dc_fname);
-
 std::string print_region(region_t region) {
     std::stringstream ss;
     ss << contig_id2name[region.contig_id] << ":" << region.start << "-" << region.end;
@@ -229,20 +226,39 @@ prediction_t make_prediction(reads_cluster_t reads, int contig_id, int mcontig_i
     };
 
     auto start_comp = [] (const bam1_t* r1, const bam1_t* r2) { return r1->core.pos < r2->core.pos; };
-    auto end_comp = [] (const bam1_t* r1, const bam1_t* r2) { return bam_endpos(r1) < bam_endpos(r2); };
     int start_pos = (*std::min_element(reads.reads.begin(), reads.reads.end(), start_comp))->core.pos;
+
+    auto end_comp = [] (const bam1_t* r1, const bam1_t* r2) { return bam_endpos(r1) < bam_endpos(r2); };
     int end_pos = bam_endpos(*std::max_element(reads.reads.begin(), reads.reads.end(), end_comp));
+
     anchor_t a1(bam_is_rev(reads.reads[0]) ? 'L' : 'R', contig_id, start_pos, end_pos, clip_score(reads.clip_clusters));
 
     auto mstart_comp = [] (const bam1_t* r1, const bam1_t* r2) { return r1->core.mpos < r2->core.mpos; };
-    auto mend_comp = [] (const bam1_t* r1, const bam1_t* r2) { return get_mate_endpos(r1) < bam_endpos(r2); };
+    auto clip_mstart_comp = [] (const clip_cluster_t* c1, const clip_cluster_t* c2) {
+        return c1->c->a2.start < c2->c->a2.start;
+    };
     int mstart_pos = (*std::min_element(reads.reads.begin(), reads.reads.end(), mstart_comp))->core.mpos;
+    if (!reads.clip_clusters.empty()) {
+        mstart_pos = std::min(mstart_pos,
+                (*std::min_element(reads.clip_clusters.begin(), reads.clip_clusters.end(), clip_mstart_comp))->c->a2.start);
+    }
+
+    auto mend_comp = [] (const bam1_t* r1, const bam1_t* r2) { return get_mate_endpos(r1) < bam_endpos(r2); };
+    auto clip_mend_comp = [] (const clip_cluster_t* c1, const clip_cluster_t* c2) {
+        return c1->c->a2.end < c2->c->a2.end;
+    };
     int mend_pos = get_mate_endpos(*std::max_element(reads.reads.begin(), reads.reads.end(), mend_comp));
+    if (!reads.clip_clusters.empty()) {
+        mend_pos = std::max(mend_pos,
+                (*std::max_element(reads.clip_clusters.begin(), reads.clip_clusters.end(), clip_mend_comp))->c->a2.end);
+    }
+
     anchor_t a2(bam_is_mrev(reads.reads[0]) ? 'L' : 'R', mcontig_id, mstart_pos, mend_pos, clip_score(reads.clip_clusters));
 
     cluster_t* c = new cluster_t(a1, a2, DISC_TYPES.DC, reads.reads.size());
     prediction_t prediction(c, DISC_TYPES.DC);
     delete c;
+
     return prediction;
 }
 
@@ -356,6 +372,9 @@ void remap_cluster(reads_cluster_t r_cluster, reads_cluster_t l_cluster, std::ve
     }
     for (int i = 0; i < clip_clusters.size(); i++) {
         if (offsets[full_cluster.size()+i] == SKIP_READ) continue;
+
+        clip_clusters[i]->c->a2.start = best_region.start + offsets[full_cluster.size()+i];
+        clip_clusters[i]->c->a2.end = clip_clusters[i]->c->a2.start + clip_clusters[i]->seq.length();
 
         if (clip_clusters[i]->c->a1.dir == 'R') {
             pos_cluster.clip_clusters.push_back(clip_clusters[i]);
@@ -605,8 +624,8 @@ void remap(int id, int contig_id,   std::vector<clip_cluster_t*>& r_clip_cluster
     std::cout << "Remapping DC for " << contig_id << " (" << contig_id2name[contig_id] << ")" << std::endl;
     mtx.unlock();
 
-    StripedSmithWaterman::Aligner aligner(2, 2, 3, 1, false);
-    StripedSmithWaterman::Aligner aligner_to_base(2, 2, 3, 1, true);
+    StripedSmithWaterman::Aligner aligner(2, 2, 6, 1, false);
+    StripedSmithWaterman::Aligner aligner_to_base(2, 2, 6, 1, true);
 
     std::unordered_map<std::string, std::string> mateseqs;
     std::ifstream mateseqs_fin(workdir + "/workspace/" + std::to_string(contig_id) + "-MATESEQS");

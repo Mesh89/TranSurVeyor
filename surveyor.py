@@ -14,7 +14,7 @@ cmd_parser.add_argument('reference', help='Reference genome in FASTA format.')
 cmd_parser.add_argument('--threads', type=int, default=1, help='Number of threads to be used.')
 cmd_parser.add_argument('--samtools', default='samtools', help='Samtools path.')
 cmd_parser.add_argument('--bwa', default='bwa', help='BWA path.')
-cmd_parser.add_argument('--maxSCDist', type=int, default=10, help='Max distance (in bp) for two clips to be considered '
+cmd_parser.add_argument('--maxSCDist', type=int, default=5, help='Max distance (in bp) for two clips to be considered '
                                                                   'representing the same breakpoint.')
 cmd_parser.add_argument('--maxTRAsize', type=int, default=1000, help='Maximum size for which TranSurVeyor will try to '
                                                                      'predict both breakpoints.')
@@ -126,7 +126,7 @@ os.system(read_categorizer_cmd)
 
 
 clip_consensus_builder_cmd = "./clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
-print "Executing:", read_categorizer_cmd
+print "Executing:", clip_consensus_builder_cmd
 os.system(clip_consensus_builder_cmd)
 
 
