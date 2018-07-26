@@ -152,7 +152,7 @@ int compute_score_supp(region_t& region, std::vector<bam1_t*>& reads, std::unord
 
         aligner.Align(s.c_str(), chrs[contig_id2name[region.contig_id]].first+region.start, region.end-region.start,
                       filter, &alignment, mask_len);
-        bool accepted = alignment.sw_score >= s.length();
+        bool accepted = alignment.sw_score >= 30; //s.length(); TODO
         accepted &= !is_poly_ACGT(s.c_str()+alignment.query_begin, alignment.query_end-alignment.query_begin+1);
         if (accepted) {
             score += alignment.sw_score;
@@ -624,8 +624,8 @@ void remap(int id, int contig_id,   std::vector<clip_cluster_t*>& r_clip_cluster
     std::cout << "Remapping DC for " << contig_id << " (" << contig_id2name[contig_id] << ")" << std::endl;
     mtx.unlock();
 
-    StripedSmithWaterman::Aligner aligner(2, 2, 6, 1, false);
-    StripedSmithWaterman::Aligner aligner_to_base(2, 2, 6, 1, true);
+    StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+    StripedSmithWaterman::Aligner aligner_to_base(1, 4, 6, 1, true);
 
     std::unordered_map<std::string, std::string> mateseqs;
     std::ifstream mateseqs_fin(workdir + "/workspace/" + std::to_string(contig_id) + "-MATESEQS");
