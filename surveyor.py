@@ -130,18 +130,6 @@ print "Executing:", clip_consensus_builder_cmd
 os.system(clip_consensus_builder_cmd)
 
 
-bwa_cmd = "%s mem -t %d %s %s/CLIPS.fa | %s view -b > %s/CLIPS.bam" \
-          % (cmd_args.bwa, cmd_args.threads, cmd_args.reference, workspace, cmd_args.samtools, workspace)
-print "Executing:", bwa_cmd
-os.system(bwa_cmd)
-
-pysam.sort("-@", str(cmd_args.threads), "-o", "%s/CLIPS.sorted.bam" % workspace, "%s/CLIPS.bam" % workspace)
-
-sc_categorizer_cmd = "./sc_categorizer %s" % cmd_args.workdir
-print "Executing:", sc_categorizer_cmd
-os.system(sc_categorizer_cmd)
-
-
 dc_remapper_cmd = "./dc_remapper %s %s" % (cmd_args.workdir, cmd_args.reference)
 print "Executing:", dc_remapper_cmd
 os.system(dc_remapper_cmd)
