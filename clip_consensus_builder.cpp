@@ -46,6 +46,7 @@ auto clip_end = [](bam1_t* r, bool left_clipped) {return left_clipped ? r->core.
 
 
 std::string build_clip_consensus2(std::vector<bam1_t*>& clipped, bool left_clipped) {
+
     sort(clipped.begin(), clipped.end(), [&left_clipped](bam1_t* r1, bam1_t* r2) {
         return clip_start(r1, left_clipped) < clip_start(r2, left_clipped);});
 
@@ -68,15 +69,17 @@ std::string build_clip_consensus2(std::vector<bam1_t*>& clipped, bool left_clipp
         read_seqs.push_back(bam_get_seq(r));
     }
 
-    int s = 0, e = 0;
+    int s = 0;
     for (int i = 0; i < clip_len; i++) {
         while (s < clipped.size() && clips_end[s] < i) s++;
 
         int a = 0, c = 0, g = 0, t = 0;
         for (int j = s; j < clipped.size() && clips_start[j] <= i; j++) {
             if (clips_end[j] < i) continue;
-            uint8_t nucl = bam_seqi(read_seqs[j],
-                                    clip_start(clipped[j],left_clipped)-get_unclipped_start(clipped[j]) + i-clips_start[j]);
+
+            bam1_t* r = clipped[j];
+            int clip_start_in_read = left_clipped ? 0 : r->core.l_qseq - (get_unclipped_end(r)-bam_endpos(r));
+            uint8_t nucl = bam_seqi(read_seqs[j], clip_start_in_read + i-clips_start[j]);
             if (nucl == 1) a++;
             else if (nucl == 2) c++;
             else if (nucl == 4) g++;
@@ -138,6 +141,7 @@ bool validate_clip(const consensus_t* consensus, StripedSmithWaterman::Aligner& 
 consensus_t* build_clip_consensus(int contig_id, std::vector<bam1_t*>& clipped,
                                                          bool left_clipped, StripedSmithWaterman::Aligner& aligner,
                                                          StripedSmithWaterman::Filter& filter) {
+
     std::string consensus = build_clip_consensus2(clipped, left_clipped);
     if (consensus == "") return NULL;
 
@@ -150,9 +154,13 @@ consensus_t* build_clip_consensus(int contig_id, std::vector<bam1_t*>& clipped,
         int clip_start_in_consensus = clip_start(r, left_clipped)-first_clip_start;
         int clip_end_in_consensus = clip_end(r, left_clipped)-first_clip_start;
         int clip_start_in_read = left_clipped ? 0 : r->core.l_qseq - (get_unclipped_end(r)-bam_endpos(r));
+
         for (int i = clip_start_in_consensus, j = clip_start_in_read; i < clip_end_in_consensus; i++, j++) {
-            if (consensus[i] != get_base(read_seq, j)) mm++;
+            if (consensus[i] != get_base(read_seq, j)) {
+                mm++;
+            }
         }
+
         if (mm < std::ceil(MAX_SEQ_ERROR * consensus.length())) {
             accepted_clips.push_back(r);
         }
@@ -223,9 +231,9 @@ void build_clip_consensuses(int id, int contig_id) {
             lc_reads.push_back(bam_dup1(read));
         }
         if (is_right_clipped(read)) {
-            if (get_unclipped_end(read)-bam_endpos(read) >= MIN_CLIP_CONSENSUS_LEN) {
+//            if (get_unclipped_end(read)-bam_endpos(read) >= MIN_CLIP_CONSENSUS_LEN) {
                 rc_reads.push_back(bam_dup1(read));
-            }
+//            }
         }
     }
 
