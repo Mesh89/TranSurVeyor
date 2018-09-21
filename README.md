@@ -47,9 +47,13 @@ The bare minimum command for running TranSurveyor is
 python surveyor.py /path/to/bamfile /an/empty/working/directory /path/to/reference/fasta
 ```
 
+An especially important parameter is maxTRAsize, which is the maximum transposition size for which TranSurVeyor will attempt predicting both breakpoints.
+Higher values will require higher computational time. Currently the default is 1,000, but on our test datasets a value of 10,000 does not affect much the computational time.
+Furhter experimentation is required, and we may change the default value in the future.
+
 Other parameters which may be important are the number of threads and the location of the bwa and samtools executable.
 ```
-python surveyor.py /path/to/bamfile /an/empty/working/directory	/path/to/reference/fasta --threads 40 --samtools /path/to/samtools --bwa /path/to/bwa
+python surveyor.py /path/to/bamfile /an/empty/working/directory	/path/to/reference/fasta --threads 40 --samtools /path/to/samtools --bwa /path/to/bwa --maxTRAsize 10000
 ```
 
 After TranSurveyor has been successfully run, the calls can be retrieved with the command
