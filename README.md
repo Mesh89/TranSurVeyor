@@ -49,7 +49,7 @@ python surveyor.py /path/to/bamfile /an/empty/working/directory /path/to/referen
 
 An especially important parameter is maxTRAsize, which is the maximum transposition size for which TranSurVeyor will attempt predicting both breakpoints.
 Higher values will require higher computational time. Currently the default is 1,000, but on our test datasets a value of 10,000 does not affect much the computational time.
-Furhter experimentation is required, and we may change the default value in the future.
+Further experimentation is required, and we may change the default value in the future.
 
 Other parameters which may be important are the number of threads and the location of the bwa and samtools executable.
 ```
