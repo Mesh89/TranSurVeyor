@@ -19,7 +19,7 @@ add_executable(sc_categorizer ${SC_CATEGORIZER_SRC})
 set(DC_REMAPPER_SRC libs/ssw.c libs/ssw_cpp.cpp dc_remapper.cpp sam_utils.h config.h libs/cptl_stl.h cluster.h)
 add_executable(dc_remapper ${DC_REMAPPER_SRC})
 
-set(ADD_FILTERING_INFO_SRC add_filtering_info.cpp sam_utils.h config.h libs/cptl_stl.h cluster.h)
+set(ADD_FILTERING_INFO_SRC add_filtering_info.cpp sam_utils.h config.h libs/cptl_stl.h cluster.h ks-test.h)
 add_executable(add_filtering_info ${ADD_FILTERING_INFO_SRC})
 
 set(FILTER_SRC filter.cpp cluster.h)
