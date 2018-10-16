@@ -275,10 +275,10 @@ bool is_poly_ACGT(const char* seq, int len) {
     int a = 0, c = 0, g = 0, t = 0;
     for (int i = 0; i < len; i++) {
         char base = seq[i];
-        if (base == 'A') a++;
-        else if (base == 'C') c++;
-        else if (base == 'G') g++;
-        else if (base == 'T') t++;
+        if (base == 'A' || base == 'a') a++;
+        else if (base == 'C' || base == 'c') c++;
+        else if (base == 'G' || base == 'g') g++;
+        else if (base == 'T' || base == 't') t++;
     }
     int maxc = std::max(std::max(a,c), std::max(g,t));
     return double(maxc)/len >= 0.8;
