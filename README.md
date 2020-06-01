@@ -13,7 +13,7 @@ If htslib does not build correctly, please refer to https://github.com/samtools/
 Then, run
 
 ```
-cmake . && make
+cmake -DCMAKE_BUILD_TYPE=Release . && make
 ```
 
 ## Preparing the reference

@@ -24,7 +24,7 @@ add_executable(add_filtering_info ${ADD_FILTERING_INFO_SRC})
 set(FILTER_SRC filter.cpp cluster.h)
 add_executable(filter ${FILTER_SRC})
 
-find_library(HTS_LIB hts htslib-1.7/lib)
+find_library(HTS_LIB hts PATHS htslib-1.7/lib NO_DEFAULT_PATH)
 target_link_libraries(reads_categorizer "${HTS_LIB}")
 target_link_libraries(clip_consensus_builder "${HTS_LIB}")
 target_link_libraries(sc_categorizer "${HTS_LIB}")
