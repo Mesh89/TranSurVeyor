@@ -16,8 +16,11 @@ cmd_parser.add_argument('--samtools', default='samtools', help='Samtools path.')
 cmd_parser.add_argument('--bwa', default='bwa', help='BWA path.')
 cmd_parser.add_argument('--maxSCDist', type=int, default=5, help='Max distance (in bp) for two clips to be considered '
                                                                   'representing the same breakpoint.')
-cmd_parser.add_argument('--maxTRAsize', type=int, default=1000, help='Maximum size for which TranSurVeyor will try to '
+cmd_parser.add_argument('--maxTRAsize', type=int, default=10000, help='Maximum size for which TranSurVeyor will try to '
                                                                      'predict both breakpoints.')
+cmd_parser.add_argument('--maxIPdist', type=int, default=1000, help='Maximum distance between forward and reverse '
+                                                                    'insertion points.')
+
 
 cmd_args = cmd_parser.parse_args()
 
@@ -35,7 +38,9 @@ config_file = open(cmd_args.workdir + "/config.txt", "w")
 config_file.write("threads %d\n" % cmd_args.threads)
 config_file.write("max_sc_dist %d\n" % cmd_args.maxSCDist)
 config_file.write("max_tra_size %d\n" % cmd_args.maxTRAsize)
+config_file.write("max_ip_dist %d\n" % cmd_args.maxIPdist)
 
+TRANSURVEYOR_PATH = os.path.dirname(os.path.realpath(__file__))
 
 # Find read length
 
@@ -44,6 +49,7 @@ bam_file = pysam.AlignmentFile(cmd_args.bamFile)
 for i, read in enumerate(bam_file.fetch(until_eof=True)):
     if i > MAX_READS: break
     read_len = max(read_len, read.query_length)
+config_file.write("read_len %d\n" % read_len)
 
 
 # Generate general distribution of insert sizes
@@ -120,21 +126,21 @@ config_file.close();
 if not os.path.exists(workspace):
     os.makedirs(workspace)
 
-read_categorizer_cmd = "./reads_categorizer %s %s" % (cmd_args.bamFile, cmd_args.workdir);
+read_categorizer_cmd = TRANSURVEYOR_PATH + "/reads_categorizer %s %s" % (cmd_args.bamFile, cmd_args.workdir);
 print "Executing:", read_categorizer_cmd
 os.system(read_categorizer_cmd)
 
 
-clip_consensus_builder_cmd = "./clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
+clip_consensus_builder_cmd = TRANSURVEYOR_PATH + "/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
 print "Executing:", clip_consensus_builder_cmd
 os.system(clip_consensus_builder_cmd)
 
 
-dc_remapper_cmd = "./dc_remapper %s %s" % (cmd_args.workdir, cmd_args.reference)
+dc_remapper_cmd = TRANSURVEYOR_PATH + "/dc_remapper %s %s" % (cmd_args.workdir, cmd_args.reference)
 print "Executing:", dc_remapper_cmd
 os.system(dc_remapper_cmd)
 
 
-add_filtering_info_cmd = "./add_filtering_info %s %s" % (cmd_args.bamFile, cmd_args.workdir)
+add_filtering_info_cmd = TRANSURVEYOR_PATH + "/add_filtering_info %s %s" % (cmd_args.bamFile, cmd_args.workdir)
 print "Executing:", add_filtering_info_cmd
 os.system(add_filtering_info_cmd)

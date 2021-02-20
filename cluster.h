@@ -3,9 +3,10 @@
 
 #include <iostream>
 #include <atomic>
-#include <htslib/sam.h>
+
 #include "sam_utils.h"
 #include "config.h"
+#include "htslib/sam.h"
 
 typedef uint8_t sv_type_t;
 static struct sv_types_t {
@@ -180,6 +181,8 @@ struct breakpoint_t {
     }
 
     int pos() { return dir == 'L' ? start : end; }
+
+    int len() { return end-start+1; }
 
     std::string to_str() {
         char buffer[100];

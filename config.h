@@ -18,7 +18,7 @@ struct config_t {
     int threads;
     int avg_depth;
     int max_is, min_is;
-    int max_sc_dist, max_tra_size;
+    int max_sc_dist, max_tra_size, max_ip_dist;
 };
 
 
@@ -38,6 +38,9 @@ config_t parse_config(std::string file) {
     config.max_is = stoi(config_params["max_is"]);
     config.max_sc_dist = stoi(config_params["max_sc_dist"]);
     config.max_tra_size = stoi(config_params["max_tra_size"]);
+    if (config_params.count("max_ip_dist")) {
+        config.max_ip_dist = stoi(config_params["max_ip_dist"]);
+    }
     return config;
 };
 
