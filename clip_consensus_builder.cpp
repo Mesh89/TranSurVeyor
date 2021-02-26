@@ -75,7 +75,7 @@ std::string build_clip_consensus2(std::vector<bam1_t*>& clipped, bool left_clipp
 
         int a = 0, c = 0, g = 0, t = 0;
         for (int j = s; j < clipped.size() && clips_start[j] <= i; j++) {
-            if (clips_end[j] < i) continue;
+            if (clips_end[j] <= i) continue;
 
             bam1_t* r = clipped[j];
             int clip_start_in_read = left_clipped ? 0 : r->core.l_qseq - (get_unclipped_end(r)-bam_endpos(r));
