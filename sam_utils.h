@@ -199,7 +199,7 @@ bool check_SNP(bam1_t* read, std::deque<bam1_t*>& buffer, double avg_depth) {
     int* diff = new int[read->core.l_qseq];
     std::fill(diff, diff+read->core.l_qseq, 0);
 
-    int32_t endpos = bam_endpos(read);
+    hts_pos_t endpos = bam_endpos(read);
     for (bam1_t* r : buffer) {
         if (r->core.pos > endpos) break;
 

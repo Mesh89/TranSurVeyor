@@ -51,7 +51,7 @@ std::string build_clip_consensus2(std::vector<bam1_t*>& clipped, bool left_clipp
         return clip_start(r1, left_clipped) < clip_start(r2, left_clipped);});
 
     int first_clip_start = clip_start(clipped[0], left_clipped);
-    int last_clip_end = 0;
+    hts_pos_t last_clip_end = 0;
     for (bam1_t* r : clipped) {
         last_clip_end = std::max(last_clip_end, clip_end(r, left_clipped));
     }
@@ -171,7 +171,7 @@ consensus_t* build_clip_consensus(int contig_id, std::vector<bam1_t*>& clipped,
         clipped.clear();
         return NULL;
     } else {
-        int start = INT32_MAX, end = 0;
+        hts_pos_t start = INT32_MAX, end = 0;
         for (bam1_t* r : clipped) {
             start = std::min(start, r->core.pos);
             end = std::max(end, bam_endpos(r));

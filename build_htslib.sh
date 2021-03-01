@@ -1,7 +1,7 @@
-unzip htslib-1.7.zip
-cd htslib-1.7
+tar -xjf htslib-1.11.tar.bz2
+cd htslib-1.11
 autoheader
 autoconf
-./configure --disable-lmza --prefix=`pwd`
+./configure --prefix=`pwd`
 make
 make install

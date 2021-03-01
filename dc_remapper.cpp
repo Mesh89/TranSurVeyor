@@ -92,8 +92,8 @@ region_t get_region(std::vector<bam1_t*> subcluster, std::string& m_contig_name)
         }
     }
 
-    int start = INT_MAX;
-    int end = 0;
+    hts_pos_t start = INT_MAX;
+    hts_pos_t end = 0;
     if (leftmost_reverse_mate != NULL) {
         start = std::min(start, leftmost_reverse_mate->core.mpos-config.max_is);
         end = std::max(end, leftmost_reverse_mate->core.mpos+config.max_tra_size);
@@ -104,8 +104,9 @@ region_t get_region(std::vector<bam1_t*> subcluster, std::string& m_contig_name)
     }
 
     std::pair<char *, size_t> chr = chrs[m_contig_name];
-    int contig_len = chr.second;
-    return region_t(contig_name2id[m_contig_name], subcluster[0]->core.mtid, std::max(0,start), std::min(end,contig_len));
+    hts_pos_t contig_len = chr.second;
+    return region_t(contig_name2id[m_contig_name], subcluster[0]->core.mtid,
+                    std::max(hts_pos_t(0),start), std::min(end,contig_len));
 }
 
 char _cigar_int_to_op(uint32_t c) {
