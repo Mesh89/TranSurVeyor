@@ -4,7 +4,7 @@
 
 To be compiled, TranSurveyor requires g++ 4.7.2.
 
-htslib 1.7 is included in the source, zipped. First of all, you should build it by using the provided script
+htslib 1.11 is included in the source, compressed. First of all, you should build it by using the provided script
 ```
 ./build_htslib.sh
 ```
