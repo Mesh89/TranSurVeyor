@@ -15,9 +15,11 @@
 config_t config;
 std::unordered_map<std::string, int> contig_name2id;
 std::vector<int> tid_to_contig_id;
-std::vector<std::ofstream*> mate_seqs_writers_by_tid; // indexed by tid, not contig_id
+std::vector<std::string> mate_seqs_fnames; // indexed by tid, not contig_id
+std::vector<std::vector<std::string> > mate_seqs;
 
 std::mutex mtx;
+std::mutex* mtx_contig;
 
 const int MAX_BUFFER_SIZE = 100;
 
@@ -44,21 +46,7 @@ samFile* get_writer(std::string name, bam_hdr_t* header) {
 
 void categorize(int id, std::string contig, std::string bam_fname, int target_len) {
 
-
-    samFile* bam_file = sam_open(bam_fname.c_str(), "r");
-    if (bam_file == NULL) {
-        throw "Unable to open BAM file.";
-    }
-
-    hts_idx_t* idx = sam_index_load(bam_file, bam_fname.c_str());
-    if (idx == NULL) {
-        throw "Unable to open BAM index.";
-    }
-
-    bam_hdr_t* header = sam_hdr_read(bam_file);
-    if (header == NULL) {
-        throw "Unable to open BAM header.";
-    }
+    open_samFile_t* bam_file = open_samFile(bam_fname.c_str());
 
     int contig_id = contig_name2id[contig];
     char region[1000];
@@ -68,20 +56,20 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
     std::cout << "Categorizing " << region << std::endl;
     mtx.unlock();
 
-    hts_itr_t* iter = sam_itr_querys(idx, header, region);
+    hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, region);
     bam1_t* read = bam_init1();
 
     std::unordered_map<disc_type_t, samFile*> writers;
 
-    samFile* clip_writer = get_writer(std::to_string(contig_id) + "-CLIP.bam", header);
+    samFile* clip_writer = get_writer(std::to_string(contig_id) + "-CLIP.bam", bam_file->header);
 
-    samFile* rdc_writer = get_writer("R" + std::to_string(contig_id) + "-DC.noremap.bam", header);
-    samFile* ldc_writer = get_writer("L" + std::to_string(contig_id) + "-DC.noremap.bam", header);
+    samFile* rdc_writer = get_writer("R" + std::to_string(contig_id) + "-DC.noremap.bam", bam_file->header);
+    samFile* ldc_writer = get_writer("L" + std::to_string(contig_id) + "-DC.noremap.bam", bam_file->header);
 
     std::deque<bam1_t*> two_way_buffer, forward_buffer;
 
     int i = 0;
-    while (sam_itr_next(bam_file, iter, read) >= 0 && i < MAX_BUFFER_SIZE-1) {
+    while (sam_itr_next(bam_file->file, iter, read) >= 0 && i < MAX_BUFFER_SIZE-1) {
         if (is_valid(read, false, true)) {
             bam1_t* read2 = bam_dup1(read);
             add_to_queue(two_way_buffer, read2, 2*MAX_BUFFER_SIZE);
@@ -91,7 +79,7 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
     }
 
     while (!forward_buffer.empty()) {
-        while (sam_itr_next(bam_file, iter, read) >= 0) {
+        while (sam_itr_next(bam_file->file, iter, read) >= 0) {
             if (is_valid(read, false, true)) {
                 bam1_t* read2 = bam_dup1(read);
                 bam1_t* to_destroy = add_to_queue(two_way_buffer, read2, 2*MAX_BUFFER_SIZE);
@@ -111,7 +99,7 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
 
         // clipped read
         if (mapq >= MIN_MAPQ && is_clipped(read) && check_SNP(read, two_way_buffer, config.avg_depth)) {
-            int ok = sam_write1(clip_writer, header, read);
+            int ok = sam_write1(clip_writer, bam_file->header, read);
             if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
         }
 
@@ -125,7 +113,7 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
             if (mapq >= MIN_DC_MAPQ || mq >= MIN_DC_MAPQ) {
                 if (mapq >= mq && check_SNP(read, two_way_buffer, config.avg_depth)) { // stable end
                     if ((bam_is_rev(read) && !is_right_clipped(read)) || (!bam_is_rev(read) && !is_left_clipped(read))) {
-                        int ok = sam_write1(bam_is_rev(read) ? ldc_writer : rdc_writer, header, read);
+                        int ok = sam_write1(bam_is_rev(read) ? ldc_writer : rdc_writer, bam_file->header, read);
                         if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
                     }
                 }
@@ -136,7 +124,6 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
                         read_seq_chr[i] = get_base(read_seq, i);
                     }
                     read_seq_chr[read->core.l_qseq] = '\0';
-                    mtx.lock();
                     if (bam_is_rev(read)) {
                         rc(read_seq_chr);
                     }
@@ -145,9 +132,9 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
                         if (read->core.isize > 0) qname += "_1";
                         else qname += "_2";
                     }
-                    *mate_seqs_writers_by_tid[read->core.mtid] << qname << " ";
-                    *mate_seqs_writers_by_tid[read->core.mtid] << read_seq_chr << "\n";
-                    mtx.unlock();
+                    mtx_contig[read->core.mtid].lock();
+                    mate_seqs[read->core.mtid].push_back(qname + " " + read_seq_chr);
+                    mtx_contig[read->core.mtid].unlock();
                 }
             }
         }
@@ -158,20 +145,16 @@ void categorize(int id, std::string contig, std::string bam_fname, int target_le
     }
 
     bam_destroy1(read);
-    hts_itr_destroy(iter);
-    bam_hdr_destroy(header);
-    hts_idx_destroy(idx);
 
     sam_close(clip_writer);
 
     sam_close(rdc_writer);
     sam_close(ldc_writer);
 
-    sam_close(bam_file);
+    close_samFile(bam_file);
 }
 
 int main(int argc, char* argv[]) {
-
     std::string bam_fname = argv[1];
     workdir = std::string(argv[2]);
     std::string workspace = workdir + "/workspace";
@@ -187,18 +170,16 @@ int main(int argc, char* argv[]) {
 
     ctpl::thread_pool thread_pool(config.threads);
 
-    samFile* bam_file = sam_open(bam_fname.c_str(), "r");
-    if (bam_file == NULL) {
-        std::cerr << "Unable to open BAM file." << std::endl;
-        return -1;
-    }
+    open_samFile_t* bam_file = open_samFile(bam_fname.c_str());
 
-    bam_hdr_t* header = sam_hdr_read(bam_file);
+    bam_hdr_t* header = bam_file->header;
     tid_to_contig_id.resize(header->n_targets);
+    mtx_contig = new std::mutex[header->n_targets + 1];
+    mate_seqs.resize(header->n_targets + 1);
     for (int i = 0; i < header->n_targets; i++) {
         int contig_id = contig_name2id[std::string(header->target_name[i])];
         std::string fname = std::to_string(contig_id) + "-MATESEQS";
-        mate_seqs_writers_by_tid.push_back(new std::ofstream(workdir + "/workspace/" + fname));
+        mate_seqs_fnames.push_back(workdir + "/workspace/" + fname);
     }
 
     std::vector<std::future<void> > futures;
@@ -211,15 +192,18 @@ int main(int argc, char* argv[]) {
         try {
             futures[i].get();
         } catch (char const* s) {
-            std::cout << s << std::endl;
+            std::cerr << s << std::endl;
         }
     }
 
     for (int i = 0; i < header->n_targets; i++) {
-        mate_seqs_writers_by_tid[i]->close();
-        delete mate_seqs_writers_by_tid[i];
+        std::ofstream mate_seqs_fout(mate_seqs_fnames[i]);
+        for (std::string& mate_seq : mate_seqs[i]) {
+            mate_seqs_fout << mate_seq << std::endl;
+        }
+        mate_seqs_fout.close();
     }
 
-    bam_hdr_destroy(header);
-    sam_close(bam_file);
+    close_samFile(bam_file);
 }
+
