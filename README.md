@@ -82,8 +82,4 @@ breakpoint near the insertion site, while BP2 the breakpoint of the inserted seq
 DISCORDANT is the number of discordant read pairs supporting the junction, and SCORE is the positive-to-negative score, i.e. a measure of confidence: the highest the score, the more confident the 
 junction.
 
-## Notes
-
-TranSurveyor is a very young software, and it has only been used by its authours on a handful of datasets. 
-If you should encounter problems, please write to e0011356@u.nus.edu ; we will do our best to both improve/fix both the software and the documentation.
 
