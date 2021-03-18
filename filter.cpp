@@ -25,11 +25,11 @@ char dir_to_strand(char dir) {
 
 std::string formatted_print(prediction_t& pred) {
     char str[10000];
-    sprintf(str, "ID=%d BP1=%c:%s:%d BP2=%c:%s:%d DISCORDANT=%d SCORE=%lf",
+    sprintf(str, "ID=%d BP1=%c:%s:%d BP2=%c:%s:%d DISCORDANT=%d SPLIT_READS=%d,%d SCORE=%lf",
             pred.id,
             dir_to_strand(pred.bp1.dir), contig_id2name[pred.bp1.contig_id].c_str(), pred.bp1.pos(),
             dir_to_strand(pred.bp2.dir), contig_id2name[pred.bp2.contig_id].c_str(), pred.bp2.pos(),
-            pred.disc_pairs, ptn_score(pred));
+            pred.disc_pairs, pred.bp1.sc_reads, pred.bp2.sc_reads, ptn_score(pred));
     return str;
 }
 
@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
     // we explicitly store contig_name2id to make sure the order is consistent among all execs
     std::ifstream contig_map_fin(workdir + "/contig_map");
     std::string contig_name; int contig_id;
-    contig_id2name.push_back("");
+//    contig_id2name.push_back("");
     while (contig_map_fin >> contig_name >> contig_id) {
         contig_id2name.push_back(contig_name);
     }

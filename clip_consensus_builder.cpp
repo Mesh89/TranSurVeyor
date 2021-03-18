@@ -17,8 +17,6 @@ std::string workdir;
 std::vector<std::string> contig_id2name;
 std::unordered_map<std::string, std::pair<char*, size_t> > chrs;
 
-std::ofstream fa_out;
-
 struct consensus_t {
     bool left_clipped;
     int contig_id, start, end;
@@ -195,55 +193,32 @@ void build_clip_consensuses(int id, int contig_id) {
     StripedSmithWaterman::Aligner aligner(2,2,4,1,true);
     StripedSmithWaterman::Filter filter;
 
-    std::vector<consensus_t*>& clip_consensuses = consensus_vectors[contig_id-1];
+    std::vector<consensus_t*>& clip_consensuses = consensus_vectors[contig_id];
 
     std::string clipped_ids_fname = workdir + "/workspace/" + std::to_string(contig_id)+"-CLIPPED";
     std::ofstream clipped_ids_file(clipped_ids_fname);
 
     std::string bam_fname = workdir + "/workspace/" + std::to_string(contig_id)+"-CLIP.bam";
-    samFile* bam_file = sam_open(bam_fname.c_str(), "r");
-    if (bam_file == NULL) {
-        throw "Unable to open " + bam_fname;
-    }
+    open_samFile_t* bam_file = open_samFile(bam_fname.c_str(), true);
 
-    hts_idx_t* idx = sam_index_load(bam_file, bam_fname.c_str());
-    if (idx == NULL) {
-        int code = sam_index_build(bam_fname.c_str(), 0);
-        if (code != 0) {
-            throw "Unable to open BAM index.";
-        } else {
-            idx = sam_index_load(bam_file, bam_fname.c_str());
-        }
-    }
-
-    bam_hdr_t* header = sam_hdr_read(bam_file);
-    if (header == NULL) {
-        throw "Unable to open BAM header.";
-    }
-
-    hts_itr_t* iter = sam_itr_querys(idx, header, contig_id2name[contig_id].c_str());
+    hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, contig_id2name[contig_id].c_str());
     bam1_t* read = bam_init1();
 
     // divide soft-clipped reads into left-clipped and right-clipped
     std::vector<bam1_t*> lc_reads, rc_reads;
-    while (sam_itr_next(bam_file, iter, read) >= 0) {
-        if (is_left_clipped(read)) {
+    while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+        if (is_left_clipped(read, MIN_CLIP_LEN)) {
             lc_reads.push_back(bam_dup1(read));
         }
-        if (is_right_clipped(read)) {
-//            if (get_unclipped_end(read)-bam_endpos(read) >= MIN_CLIP_CONSENSUS_LEN) {
-                rc_reads.push_back(bam_dup1(read));
-//            }
+        if (is_right_clipped(read, MIN_CLIP_LEN)) {
+            rc_reads.push_back(bam_dup1(read));
         }
     }
 
     bam_destroy1(read);
 
+    close_samFile(bam_file);
     hts_itr_destroy(iter);
-    bam_hdr_destroy(header);
-    hts_idx_destroy(idx);
-
-    sam_close(bam_file);
 
     auto lc_same_cluster = [](bam1_t* r1, bam1_t* r2) {return abs(r1->core.pos-r2->core.pos) <= config.max_sc_dist;};
     auto rc_same_cluster = [](bam1_t* r1, bam1_t* r2) {return abs(bam_endpos(r1)-bam_endpos(r2)) <= config.max_sc_dist;};
@@ -318,37 +293,31 @@ void build_clip_consensuses(int id, int contig_id) {
 int main(int argc, char* argv[]) {
 
     workdir = std::string(argv[1]);
-    std::string workspace = workdir + "/workspace";
+    std::string workspace = workdir + "/workspace/";
     std::string reference_fname  = std::string(argv[2]);
 
     FILE* fastaf = fopen(reference_fname.c_str(), "r");
     kseq_t *seq = kseq_init(fileno(fastaf));
-    int l;
-    while ((l = kseq_read(seq)) >= 0) {
+    while (kseq_read(seq) >= 0) {
         chrs[std::string(seq->name.s)] = std::make_pair(new char[seq->seq.l+1], seq->seq.l);
         strcpy(chrs[std::string(seq->name.s)].first, seq->seq.s);
     }
     kseq_destroy(seq);
+    fclose(fastaf);
 
     config = parse_config(workdir + "/config.txt");
 
-    // we explicitly store contig_name2id to make sure the order is consistent among all execs
     std::ifstream contig_map_fin(workdir + "/contig_map");
     std::string contig_name; int contig_id;
-    contig_id2name.push_back("");
     while (contig_map_fin >> contig_name >> contig_id) {
         contig_id2name.push_back(contig_name);
     }
+    consensus_vectors.resize(contig_id2name.size());
 
     ctpl::thread_pool thread_pool(config.threads);
-
-    for (contig_id = 1; contig_id < contig_id2name.size(); contig_id++) {
-        consensus_vectors.push_back(std::vector<consensus_t *>());
-    }
-
     std::vector<std::future<void> > futures;
-    for (contig_id = 1; contig_id < contig_id2name.size(); contig_id++) {
-        std::future<void> future = thread_pool.push(build_clip_consensuses, contig_id);
+    for (int i = 0; i < contig_id2name.size(); i++) {
+        std::future<void> future = thread_pool.push(build_clip_consensuses, i);
         futures.push_back(std::move(future));
     }
     thread_pool.stop(true);
@@ -356,8 +325,9 @@ int main(int argc, char* argv[]) {
         futures[i].get();
     }
 
-    fa_out.open(workspace + "/CLIPS.fa");
-    for (std::vector<consensus_t*>& cv : consensus_vectors) {
+    std::ofstream fa_out(workspace + "/CLIPS.fa");
+    for (int i = 0; i < contig_id2name.size(); i++) {
+        std::vector<consensus_t*>& cv = consensus_vectors[i];
         for (consensus_t* consensus : cv) {
             fa_out << ">" << consensus->name() << "\n" << consensus->consensus << "\n";
             delete consensus;

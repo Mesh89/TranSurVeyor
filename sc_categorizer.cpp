@@ -1,15 +1,15 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <htslib/sam.h>
 
+#include <htslib/sam.h>
 #include "libs/cptl_stl.h"
 #include "config.h"
 #include "sam_utils.h"
 #include "cluster.h"
 
 config_t config;
-std::mutex mtx;
+std::mutex mtx_contig;
 std::string workdir;
 
 std::vector<std::string> contig_id2name;
@@ -18,9 +18,9 @@ std::unordered_map<std::string, int> contig_name2id;
 bam_hdr_t* header;
 
 void categorize(int id, int contig_id, std::string& clip_fname) {
-    mtx.lock();
+    mtx_contig.lock();
     std::cout << "Categorizing SC for " << contig_id << " (" << contig_id2name[contig_id] << ")" << std::endl;
-    mtx.unlock();
+    mtx_contig.unlock();
 
     samFile* bam_file = sam_open(clip_fname.c_str(), "r");
     if (bam_file == NULL) {
@@ -51,7 +51,7 @@ void categorize(int id, int contig_id, std::string& clip_fname) {
 
     while (sam_itr_next(bam_file, iter, read) >= 0) {
         // clip must nearly all (>80%) aligned
-        if (!is_valid(read, false) || read->core.qual < MIN_MAPQ || bam_endpos(read)-read->core.pos < read->core.l_qseq*0.8) continue;
+        if (!is_valid(read) || read->core.qual < MIN_MAPQ || bam_endpos(read)-read->core.pos < read->core.l_qseq*0.8) continue;
 
         int anchor_contig_id, anchor_start, anchor_end; char anchor_dir; int anchor_sc_reads;
         char* seq_name = bam_get_qname(read);
@@ -65,10 +65,8 @@ void categorize(int id, int contig_id, std::string& clip_fname) {
         // TODO: add UM case
 
         std::ofstream* writer;
-        bool anchor_first;
         disc_type_t dt;
         if (anchor_contig_id != contig_id || abs(read->core.pos-anchor_start) > 100000) {
-            anchor_first = true;
             dt = DISC_TYPES.DC;
 
             // choose correct DC writer among RR, RL, LR, LL
@@ -103,7 +101,7 @@ void categorize(int id, int contig_id, std::string& clip_fname) {
             }
         } else continue;
 
-        cluster_t cluster(anchor_first ? a_anchor : a_clip, anchor_first ? a_clip : a_anchor, dt, 0);
+        cluster_t cluster(a_anchor, a_clip, dt, 0);
         *writer << cluster.to_str() << "\n";
     }
 

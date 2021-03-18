@@ -79,26 +79,20 @@ int64_t get_mq(bam1_t* r) {
     return mq == NULL ? 0 : bam_aux2i(mq);
 }
 
-bool is_valid(bam1_t* r, bool check_map_q = true, bool check_primary = true) {
-    if (is_unmapped(r) || (check_primary && !is_primary(r))) {
-        return false;
-    }
-    if (!check_map_q) return true;
-    else return (get_mq(r) >= MIN_MAPQ && r->core.qual >= MIN_MAPQ);
+bool is_valid(bam1_t* r) {
+    return !is_unmapped(r) && is_primary(r);
 }
 
-bool is_left_clipped(bam1_t* r) {
+bool is_left_clipped(bam1_t* r, int min_clip_len) {
     uint32_t* cigar = bam_get_cigar(r);
-    return bam_cigar_opchr(cigar[0]) == 'S' && bam_cigar_oplen(cigar[0]) >= MIN_CLIP_LEN;
+    return bam_cigar_opchr(cigar[0]) == 'S' && bam_cigar_oplen(cigar[0]) >= min_clip_len;
 }
-
-bool is_right_clipped(bam1_t* r) {
+bool is_right_clipped(bam1_t* r, int min_clip_len) {
     uint32_t* cigar = bam_get_cigar(r);
-    return bam_cigar_opchr(cigar[r->core.n_cigar-1]) == 'S' && bam_cigar_oplen(cigar[r->core.n_cigar-1]) >= MIN_CLIP_LEN;
+    return bam_cigar_opchr(cigar[r->core.n_cigar-1]) == 'S' && bam_cigar_oplen(cigar[r->core.n_cigar-1]) >= min_clip_len;
 }
-
-bool is_clipped(bam1_t* r) {
-    return is_left_clipped(r) || is_right_clipped(r);
+bool is_clipped(bam1_t* r, int min_clip_len) {
+    return is_left_clipped(r, min_clip_len) || is_right_clipped(r, min_clip_len);
 }
 
 int get_unclipped_start(bam1_t* r) {
@@ -253,6 +247,7 @@ std::string get_sequence(bam1_t* r) {
     for (int i = 0; i < r->core.l_qseq; i++) {
         seq[i] = get_base(bam_seq, i);
     }
+    seq[r->core.l_qseq] = '\0';
     return std::string(seq);
 }
 

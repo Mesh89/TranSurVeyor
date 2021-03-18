@@ -9,7 +9,6 @@
 int MIN_MAPQ = 1;
 int MIN_CLIP_LEN = 5;
 int MIN_CLIP_CONSENSUS_LEN = 15;
-int MIN_DC_MAPQ = 20;
 double MAX_SEQ_ERROR = 0.04;
 
 int MAX_READ_SUPPORTED = 10000;
@@ -18,7 +17,7 @@ struct config_t {
     int threads;
     int avg_depth;
     int max_is, min_is;
-    int max_sc_dist, max_tra_size, max_ip_dist;
+    int max_sc_dist, max_insertion_size, min_stable_mapq;
 };
 
 
@@ -37,10 +36,8 @@ config_t parse_config(std::string file) {
     config.min_is = stoi(config_params["min_is"]);
     config.max_is = stoi(config_params["max_is"]);
     config.max_sc_dist = stoi(config_params["max_sc_dist"]);
-    config.max_tra_size = stoi(config_params["max_tra_size"]);
-    if (config_params.count("max_ip_dist")) {
-        config.max_ip_dist = stoi(config_params["max_ip_dist"]);
-    }
+    config.max_insertion_size = stoi(config_params["max_insertion_size"]);
+    config.min_stable_mapq = stoi(config_params["min_stable_mapq"]);
     return config;
 };
 

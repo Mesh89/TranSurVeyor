@@ -69,17 +69,11 @@ bool operator < (const cc_v_distance_t& ccd1, const cc_v_distance_t& ccd2) { // 
     return ccd1.distance < ccd2.distance;
 }
 
-std::string print_region(region_t region) {
-    std::stringstream ss;
-    ss << contig_id2name[region.contig_id] << ":" << region.start << "-" << region.end;
-    return ss.str();
-}
-
 region_t get_region(std::vector<bam1_t*> subcluster, std::string& m_contig_name) {
     bam1_t* leftmost_reverse_mate = NULL, * rightmost_forward_mate = NULL;
     /* gets two regions
-     * 1. from left-most reverse read, max_is to the left and max_tra_size to the right
-     * 2. from right-most forward read, max_is to the right and max_tra_size to the left
+     * 1. from left-most reverse read, max_is to the left and max_insertion_size to the right
+     * 2. from right-most forward read, max_is to the right and max_insertion_size to the left
      */
     for (bam1_t* r : subcluster) { // get leftmost reverse read
         if (bam_is_mrev(r) && (leftmost_reverse_mate == NULL || leftmost_reverse_mate->core.mpos > r->core.mpos)) {
@@ -96,10 +90,10 @@ region_t get_region(std::vector<bam1_t*> subcluster, std::string& m_contig_name)
     hts_pos_t end = 0;
     if (leftmost_reverse_mate != NULL) {
         start = std::min(start, leftmost_reverse_mate->core.mpos-config.max_is);
-        end = std::max(end, leftmost_reverse_mate->core.mpos+config.max_tra_size);
+        end = std::max(end, leftmost_reverse_mate->core.mpos+config.max_insertion_size);
     }
     if (rightmost_forward_mate != NULL) {
-        start = std::min(start, rightmost_forward_mate->core.mpos-config.max_tra_size);
+        start = std::min(start, rightmost_forward_mate->core.mpos-config.max_insertion_size);
         end = std::max(end, rightmost_forward_mate->core.mpos+config.max_is);
     }
 
@@ -519,8 +513,6 @@ std::vector<reads_cluster_t> cluster_reads(open_samFile_t* dc_file, int contig_i
 
 
     std::vector<int> max_dists;
-//    for (int i = -95; i < 100; i+=5) max_dists.push_back(i);
-//    for (int i = 100; i < config.max_is; i+=100) max_dists.push_back(i);
     max_dists.push_back(config.max_is);
 
     for (int max_dist : max_dists) {
@@ -742,10 +734,8 @@ int main(int argc, char* argv[]) {
 
     config = parse_config(workdir + "/config.txt");
 
-    // we explicitly store the contig_name2id to make sure the order is consistent among all execs
     std::ifstream contig_map_fin(workdir + "/contig_map");
     std::string contig_name; int contig_id;
-    contig_id2name.push_back("");
     while (contig_map_fin >> contig_name >> contig_id) {
         contig_id2name.push_back(contig_name);
         contig_name2id[contig_name] = contig_id;
@@ -772,7 +762,7 @@ int main(int argc, char* argv[]) {
     ctpl::thread_pool thread_pool(config.threads);
 
     std::vector<std::future<void> > futures;
-    for (contig_id = 1; contig_id < contig_id2name.size(); contig_id++) {
+    for (contig_id = 0; contig_id < contig_id2name.size(); contig_id++) {
         std::future<void> future = thread_pool.push(remap, contig_id, r_clip_clusters[contig_id], l_clip_clusters[contig_id]);
         futures.push_back(std::move(future));
     }

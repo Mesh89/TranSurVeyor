@@ -80,7 +80,7 @@ void find_spanning(breakpoint_t& bp, std::string& bam_fname) {
     hts_itr_t* iter = sam_itr_querys(open_sam->idx, open_sam->header, region);
     bam1_t* read = bam_init1();
     while (sam_itr_next(open_sam->file, iter, read) >= 0) {
-        if (!is_valid(read, false) || bam_is_rev(read)) continue;
+        if (!is_valid(read) || bam_is_rev(read)) continue;
 
         if (is_samechr(read) && !is_samestr(read) && !is_outward(read, config.min_is) &&
             read->core.isize >= config.min_is && read->core.isize <= config.max_is) {
@@ -125,7 +125,6 @@ int main(int argc, char* argv[]) {
     // we explicitly store contig_name2id to make sure the order is consistent among all execs
     std::ifstream contig_map_fin(workdir + "/contig_map");
     std::string contig_name; int contig_id;
-    contig_id2name.push_back("");
     while (contig_map_fin >> contig_name >> contig_id) {
         contig_id2name.push_back(contig_name);
         contig_name2id[contig_name] = contig_id;
