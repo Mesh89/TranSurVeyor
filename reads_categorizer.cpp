@@ -80,7 +80,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
         forward_buffer.pop_front();
 
         // clipped read
-        if (read->core.qual >= config.min_stable_mapq && is_clipped(read, MIN_CLIP_LEN) && check_SNP(read, two_way_buffer, config.avg_depth)) {
+        if (read->core.qual >= config.min_stable_mapq && is_clipped(read, config.min_clip_len) && check_SNP(read, two_way_buffer, config.avg_depth)) {
             int ok = sam_write1(clip_writer, bam_file->header, read);
             if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
         }
@@ -88,32 +88,23 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
         int64_t mq = get_mq(read);
         if (is_dc_pair(read) && (read->core.qual >= config.min_stable_mapq || mq >= config.min_stable_mapq)) {
             if (read->core.qual >= mq && check_SNP(read, two_way_buffer, config.avg_depth)) { // stable end
-                if ((bam_is_rev(read) && !is_right_clipped(read, MIN_CLIP_LEN)) ||
-                    (!bam_is_rev(read) && !is_left_clipped(read, MIN_CLIP_LEN))) {
+                if ((bam_is_rev(read) && !is_right_clipped(read, config.min_clip_len)) ||
+                    (!bam_is_rev(read) && !is_left_clipped(read, config.min_clip_len))) {
                     int ok = sam_write1(bam_is_rev(read) ? ldc_writer : rdc_writer, bam_file->header, read);
                     if (ok < 0) throw "Failed to write to " + std::string(clip_writer->fn);
                 }
             }
             if (read->core.qual <= mq) { // save read seq for remapping
-                const uint8_t* read_seq = bam_get_seq(read);
-                char read_seq_chr[MAX_READ_SUPPORTED];
-                for (int i = 0; i < read->core.l_qseq; i++) {
-                    read_seq_chr[i] = get_base(read_seq, i);
-                }
-                read_seq_chr[read->core.l_qseq] = '\0';
+                std::string qname = bam_get_qname(read), read_seq = get_sequence(read);
                 if (bam_is_rev(read)) {
-                    rc(read_seq_chr);
-                }
-                std::string qname = bam_get_qname(read), read_seq_str = get_sequence(read);
-                if (bam_is_rev(read)) {
-                    rc(read_seq_str);
+                    rc(read_seq);
                 }
                 if (is_samechr(read)) {
                     if (read->core.isize > 0) qname += "_1";
                     else qname += "_2";
                 }
                 mtx_contig[read->core.mtid].lock();
-                mate_seqs[read->core.mtid].push_back(qname + " " + read_seq_str);
+                mate_seqs[read->core.mtid].push_back(qname + " " + read_seq);
                 mtx_contig[read->core.mtid].unlock();
             }
         }

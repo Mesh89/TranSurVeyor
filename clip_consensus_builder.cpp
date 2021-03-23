@@ -43,7 +43,7 @@ auto clip_start = [](bam1_t* r, bool left_clipped) {return left_clipped ? get_un
 auto clip_end = [](bam1_t* r, bool left_clipped) {return left_clipped ? r->core.pos : get_unclipped_end(r);};
 
 
-std::string build_clip_consensus2(std::vector<bam1_t*>& clipped, bool left_clipped) {
+std::string build_full_consensus_seq(std::vector<bam1_t*>& clipped, bool left_clipped) {
 
     sort(clipped.begin(), clipped.end(), [&left_clipped](bam1_t* r1, bam1_t* r2) {
         return clip_start(r1, left_clipped) < clip_start(r2, left_clipped);});
@@ -53,9 +53,9 @@ std::string build_clip_consensus2(std::vector<bam1_t*>& clipped, bool left_clipp
     for (bam1_t* r : clipped) {
         last_clip_end = std::max(last_clip_end, clip_end(r, left_clipped));
     }
-    int clip_len = last_clip_end - clip_start(clipped[0], left_clipped);
+    int clip_len = last_clip_end - first_clip_start;
 
-    if (clip_len < MIN_CLIP_CONSENSUS_LEN) return "";
+    if (clip_len < config.min_clip_len) return "";
 
     char consensus[MAX_READ_SUPPORTED];
 
@@ -101,25 +101,24 @@ std::string build_clip_consensus2(std::vector<bam1_t*>& clipped, bool left_clipp
     return std::string(consensus);
 }
 
-bool validate_clip(const consensus_t* consensus, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Filter& filter) {
-    std::pair<char *, size_t> temp = chrs[contig_id2name[consensus->contig_id]];
+bool validate_clip(const consensus_t* consensus, StripedSmithWaterman::Aligner& aligner) {
+    std::pair<char *, size_t>& temp = chrs[contig_id2name[consensus->contig_id]];
     char* chr = temp.first;
     size_t chr_len = temp.second;
 
     int region_len = consensus->consensus.length() * 1.1;
     int region_start = consensus->left_clipped ? consensus->start-region_len : consensus->end;
     if (region_start < 0) region_start = 0;
-    if (region_start+region_len >= chr_len) region_len = chr_len - region_start - 1;
+    if (region_start+region_len >= chr_len) region_len = chr_len-region_start-1;
 
-    if (region_len <= 0) { // clipped at the end of a contig
-        return true;
-    }
+    if (region_len <= 0) return true; // clipped at the end of a contig
 
     for (int i = region_start; i <= region_start+region_len; i++) {
         if (chr[i] == 'N') return false;
     }
 
     StripedSmithWaterman::Alignment alignemnt;
+    StripedSmithWaterman::Filter filter;
     int mask_len = consensus->consensus.length()/2;
     if (mask_len < 15) mask_len = 15; // suppress the warning
     try {
@@ -136,11 +135,12 @@ bool validate_clip(const consensus_t* consensus, StripedSmithWaterman::Aligner& 
     }
 }
 
-consensus_t* build_clip_consensus(int contig_id, std::vector<bam1_t*>& clipped,
-                                                         bool left_clipped, StripedSmithWaterman::Aligner& aligner,
-                                                         StripedSmithWaterman::Filter& filter) {
+consensus_t* build_clip_consensus(int contig_id, std::vector<bam1_t*>& clipped, bool left_clipped,
+                                  StripedSmithWaterman::Aligner& aligner) {
 
-    std::string consensus = build_clip_consensus2(clipped, left_clipped);
+    if (clipped.size() <= 2) return NULL;
+
+    std::string consensus = build_full_consensus_seq(clipped, left_clipped);
     if (consensus == "") return NULL;
 
     int first_clip_start = clip_start(clipped[0], left_clipped);
@@ -165,7 +165,7 @@ consensus_t* build_clip_consensus(int contig_id, std::vector<bam1_t*>& clipped,
     }
 
     clipped.swap(accepted_clips);
-    if (clipped.size() <= 1) {
+    if (clipped.size() <= 2) {
         clipped.clear();
         return NULL;
     } else {
@@ -174,14 +174,8 @@ consensus_t* build_clip_consensus(int contig_id, std::vector<bam1_t*>& clipped,
             start = std::min(start, r->core.pos);
             end = std::max(end, bam_endpos(r));
         }
-        consensus = build_clip_consensus2(clipped, left_clipped);
+        consensus = build_full_consensus_seq(clipped, left_clipped);
         return new consensus_t(left_clipped, contig_id, start, end, consensus, clipped.size());
-    }
-}
-
-void write_clips_ids(std::ofstream& out, std::vector<bam1_t*>& clips) {
-    for (bam1_t* clip : clips) {
-        out << bam_get_qname(clip) << "\n";
     }
 }
 
@@ -191,14 +185,10 @@ void build_clip_consensuses(int id, int contig_id) {
     mtx.unlock();
 
     StripedSmithWaterman::Aligner aligner(2,2,4,1,true);
-    StripedSmithWaterman::Filter filter;
 
     std::vector<consensus_t*>& clip_consensuses = consensus_vectors[contig_id];
 
-    std::string clipped_ids_fname = workdir + "/workspace/" + std::to_string(contig_id)+"-CLIPPED";
-    std::ofstream clipped_ids_file(clipped_ids_fname);
-
-    std::string bam_fname = workdir + "/workspace/" + std::to_string(contig_id)+"-CLIP.bam";
+    std::string bam_fname = workdir + "/workspace/" + std::to_string(contig_id) + "-CLIP.bam";
     open_samFile_t* bam_file = open_samFile(bam_fname.c_str(), true);
 
     hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, contig_id2name[contig_id].c_str());
@@ -207,10 +197,10 @@ void build_clip_consensuses(int id, int contig_id) {
     // divide soft-clipped reads into left-clipped and right-clipped
     std::vector<bam1_t*> lc_reads, rc_reads;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-        if (is_left_clipped(read, MIN_CLIP_LEN)) {
+        if (is_left_clipped(read, config.min_clip_len)) {
             lc_reads.push_back(bam_dup1(read));
         }
-        if (is_right_clipped(read, MIN_CLIP_LEN)) {
+        if (is_right_clipped(read, config.min_clip_len)) {
             rc_reads.push_back(bam_dup1(read));
         }
     }
@@ -228,8 +218,7 @@ void build_clip_consensuses(int id, int contig_id) {
         for (bam1_t* lc_read : lc_reads) {
             if (!curr_candidate_cluster.empty() &&
                 !lc_same_cluster(curr_candidate_cluster[0], lc_read)) { // candidate cluster complete
-                consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, true, aligner, filter);
-                write_clips_ids(clipped_ids_file, curr_candidate_cluster);
+                consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, true, aligner);
                 curr_candidate_cluster.clear();
 
                 if (consensus != NULL) {
@@ -239,8 +228,7 @@ void build_clip_consensuses(int id, int contig_id) {
             curr_candidate_cluster.push_back(lc_read);
         }
         // process last cluster
-        consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, true, aligner, filter);
-        write_clips_ids(clipped_ids_file, curr_candidate_cluster);
+        consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, true, aligner);
         curr_candidate_cluster.clear();
         if (consensus != NULL) {
             clip_consensuses.push_back(consensus);
@@ -252,8 +240,7 @@ void build_clip_consensuses(int id, int contig_id) {
         for (bam1_t* rc_read : rc_reads) {
             if (!curr_candidate_cluster.empty() &&
                 !rc_same_cluster(curr_candidate_cluster[0], rc_read)) { // candidate cluster complete
-                consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, false, aligner, filter);
-                write_clips_ids(clipped_ids_file, curr_candidate_cluster);
+                consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, false, aligner);
                 curr_candidate_cluster.clear();
 
                 if (consensus != NULL) {
@@ -263,8 +250,7 @@ void build_clip_consensuses(int id, int contig_id) {
             curr_candidate_cluster.push_back(rc_read);
         }
         // process last cluster
-        consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, false, aligner, filter);
-        write_clips_ids(clipped_ids_file, curr_candidate_cluster);
+        consensus_t* consensus = build_clip_consensus(contig_id, curr_candidate_cluster, false, aligner);
         curr_candidate_cluster.clear();
         if (consensus != NULL) {
             clip_consensuses.push_back(consensus);
@@ -279,15 +265,13 @@ void build_clip_consensuses(int id, int contig_id) {
     }
 
     // remove non-validated clips
-    clip_consensuses.erase(std::remove_if(clip_consensuses.begin(), clip_consensuses.end(),
-                                          [&aligner, &filter](const consensus_t* c) {return !validate_clip(c, aligner, filter);}),
-                           clip_consensuses.end());
+//    clip_consensuses.erase(std::remove_if(clip_consensuses.begin(), clip_consensuses.end(),
+//                                          [&aligner](const consensus_t* c) {return !validate_clip(c, aligner);}),
+//                           clip_consensuses.end());
 
     // sort by clipping position
     sort(clip_consensuses.begin(), clip_consensuses.end(), [](consensus_t* c1, consensus_t* c2) {
         return c1->clipped_pos() < c2->clipped_pos();});
-
-    clipped_ids_file.close();
 }
 
 int main(int argc, char* argv[]) {

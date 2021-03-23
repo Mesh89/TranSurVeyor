@@ -20,6 +20,7 @@ cmd_parser.add_argument('--max_sc_dist', type=int, default=5, help='Max distance
 cmd_parser.add_argument('--max_insertion_size', type=int, default=10000, help='Maximum size of the insertions which '
                                                                               'TranSurVeyor will try to predict.')
 cmd_parser.add_argument('--min_stable_mapq', type=int, default=20, help='Minimum MAPQ for a stable read.')
+cmd_parser.add_argument('--min_clip_len', type=int, default=15, help='Minimum clip len to consider.')
 cmd_args = cmd_parser.parse_args()
 
 TRANSURVEYOR_PATH = os.path.dirname(os.path.realpath(__file__))
@@ -35,6 +36,7 @@ config_file.write("threads %d\n" % cmd_args.threads)
 config_file.write("max_sc_dist %d\n" % cmd_args.max_sc_dist)
 config_file.write("max_insertion_size %d\n" % cmd_args.max_insertion_size)
 config_file.write("min_stable_mapq %d\n" % cmd_args.min_stable_mapq)
+config_file.write("min_clip_len %d\n" % cmd_args.min_clip_len)
 
 # Find read length
 read_len = 0

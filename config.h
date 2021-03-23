@@ -6,8 +6,6 @@
 #include <string>
 #include <unordered_map>
 
-int MIN_MAPQ = 1;
-int MIN_CLIP_LEN = 5;
 int MIN_CLIP_CONSENSUS_LEN = 15;
 double MAX_SEQ_ERROR = 0.04;
 
@@ -17,7 +15,7 @@ struct config_t {
     int threads;
     int avg_depth;
     int max_is, min_is;
-    int max_sc_dist, max_insertion_size, min_stable_mapq;
+    int max_sc_dist, max_insertion_size, min_stable_mapq, min_clip_len;
 };
 
 
@@ -38,6 +36,7 @@ config_t parse_config(std::string file) {
     config.max_sc_dist = stoi(config_params["max_sc_dist"]);
     config.max_insertion_size = stoi(config_params["max_insertion_size"]);
     config.min_stable_mapq = stoi(config_params["min_stable_mapq"]);
+    config.min_clip_len = stoi(config_params["min_clip_len"]);
     return config;
 };
 
