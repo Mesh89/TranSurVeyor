@@ -1,5 +1,7 @@
 # TranSurVeyor
 
+NOTE: TranSurVeyor has been deprecated. We recommend using https://github.com/kensung-lab/INSurVeyor instead, a general insertion caller which is far superior to TranSurVeyor in many ways.
+
 ## Compiling
 
 To be compiled, TranSurveyor requires g++ 4.7.2.
